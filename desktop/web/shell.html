@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cairn 桌面控制中心</title><link rel="icon" href="/desktop-icons/cairn.ico">
+<style>
+:root{font-family:"Microsoft YaHei UI",system-ui,sans-serif;color:#334155;background:#f8fafc;font-size:14px}*{box-sizing:border-box}body{margin:0;height:100vh;display:flex;flex-direction:column}button,input,select{font:inherit}button{cursor:pointer;background:white;border:1px solid #dce3ee;border-radius:9px;color:#475569;padding:9px 16px;transition:background .15s}button:hover{background:#f1f5f9}button:disabled{opacity:.45;cursor:wait}button.primary{background:#6366f1;color:white;border-color:#6366f1}.top{display:flex;align-items:center;gap:10px;padding:12px 24px;border-bottom:1px solid #e2e8f0;background:white;flex-shrink:0}.brand{display:flex;align-items:center;gap:9px;font-size:18px;font-weight:750;margin-right:14px;letter-spacing:1px}.brand img{width:34px;height:34px;object-fit:contain}.version{font-size:11px;letter-spacing:0;color:#94a3b8}.tab.active{color:#6366f1;background:#eef2ff;border-color:#c7d2fe}.state{margin-left:auto;color:#64748b;font-size:12px}.state.running{color:#0d9488}main{flex:1;min-height:0;overflow:auto;padding:28px 32px}.welcome h1{font-size:26px;margin:0 0 8px}.welcome p{color:#64748b;margin:0 0 25px}.columns{display:grid;grid-template-columns:minmax(320px,430px) minmax(300px,1fr);gap:24px;max-width:1400px;margin:auto}.card{background:white;border:1px solid #e2e8f0;border-radius:16px;padding:24px;box-shadow:0 3px 10px #0f172a04}.card h2{font-size:16px;margin:0 0 18px}.field{display:block;color:#64748b;font-size:12px;margin-bottom:7px}input,select{width:100%;padding:11px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:17px;color:#334155}input:focus,select:focus{border-color:#818cf8}.help{font-size:12px;color:#94a3b8;line-height:1.9}.actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.status-line{padding:10px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;gap:10px;font-size:13px}.path{word-break:break-all;font:12px/1.7 Consolas,monospace;color:#64748b}.log{background:#101827;color:#cbd5e1;padding:18px;border-radius:10px;font:12px/1.9 Consolas,"Microsoft YaHei",monospace;height:calc(100vh - 330px);min-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word}.hidden{display:none!important}iframe{border:0;width:100%;flex:1;min-height:0;background:#f8fafc}.about{position:fixed;inset:0;background:#0f172a44;display:grid;place-items:center;z-index:100}.about .card{width:460px;line-height:2}.about a{color:#6366f1}.about img{width:72px;height:72px}.graph-note{font-size:12px;color:#94a3b8}.settings-wrap{max-width:1200px;margin:auto}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.settings-grid .wide{grid-column:1/-1}.tag{display:inline-block;padding:4px 9px;border-radius:6px;font-size:12px;background:#f0fdfa;color:#0d9488}.banner{padding:10px 24px;background:#eef2ff;color:#4f46e5;border-bottom:1px solid #e0e7ff;font-size:13px}.banner.error{background:#fff1f2;color:#be123c}.settings-foot{margin-top:20px;color:#64748b;font-size:12px}.log{user-select:text;-webkit-user-select:text;cursor:text}.close-dialog{position:fixed;inset:0;background:#0f172a88;display:grid;place-items:center;z-index:200}.close-dialog .card{width:min(480px,calc(100vw - 32px));padding:26px}.close-dialog h2{margin-bottom:8px}.close-dialog p{color:#64748b;line-height:1.8}.close-actions{display:flex;gap:10px;margin:22px 0}.close-actions button{flex:1}.close-bottom{display:flex;align-items:center;gap:8px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:16px;font-size:13px}.close-bottom input{width:16px;margin:0}.close-error{color:#be123c!important} @media(max-width:1000px){.columns,.settings-grid{grid-template-columns:1fr}.log{height:300px}.graph-note{display:none}.top{padding:10px;gap:6px}.brand{margin-right:4px}}
+</style>
+<style>
+.shutdown-overlay{position:fixed;inset:0;z-index:500;background:rgba(15,23,42,.64);backdrop-filter:blur(7px);display:grid;place-items:center;padding:24px}
+.shutdown-panel{width:min(560px,100%);background:#fff;border:1px solid #e0e7ff;border-radius:22px;box-shadow:0 30px 90px #0f172a55;overflow:hidden}
+.shutdown-head{padding:27px 30px 20px;background:linear-gradient(125deg,#f5f7ff,#f0fdfa);display:flex;gap:15px;align-items:center;border-bottom:1px solid #e7eaf3}
+.shutdown-head img{width:48px;height:48px;object-fit:contain}.shutdown-head h2{margin:0 0 5px;font-size:21px;color:#1e293b}.shutdown-head p{margin:0;color:#64748b;font-size:12px}
+.shutdown-body{padding:24px 30px 26px}.shutdown-intro{color:#475569;line-height:1.7;margin:0 0 16px}
+.shutdown-option{display:flex;align-items:center;text-align:left;width:100%;gap:14px;margin:10px 0;padding:15px 17px;border-radius:14px;border:1px solid #dbe4f0;background:#fff}.shutdown-option:hover{border-color:#a5b4fc;background:#f8faff}
+.shutdown-option strong{display:block;color:#29364c;font-size:14px}.shutdown-option small{display:block;color:#64748b;font-size:12px;line-height:1.6;margin-top:3px}.shutdown-option .symbol{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:19px;background:#eef2ff;color:#4f46e5;flex:none}.shutdown-option.tray .symbol{background:#ccfbf1;color:#0f766e}
+.shutdown-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #e7eaf3;padding-top:17px;margin-top:18px}.shutdown-footer label{display:flex;align-items:center;gap:8px;color:#64748b;font-size:12px}.shutdown-footer input{width:16px;height:16px;margin:0;accent-color:#6366f1}.shutdown-footer button{padding:8px 15px}
+.shutdown-progress{margin:0;color:#475569;line-height:1.8}.shutdown-error{margin:14px 0;padding:12px;border-radius:10px;background:#fff1f2;color:#be123c;white-space:pre-wrap;word-break:break-word}.shutdown-danger{color:#be123c;border-color:#fecdd3}.shutdown-danger:hover{background:#fff1f2}
+</style></head><body>
+<nav class="top">
+ <span class="brand"><img src="/desktop-icons/cairn.png" alt="Cairn 图标">CAIRN<span class="version">0.7.0</span></span>
+ <button class="tab active" id="control-tab" onclick="show('control')">控制中心</button>
+ <button class="tab" id="graph-tab" onclick="show('graph')">任务过程图</button>
+ <button class="tab" id="settings-tab" onclick="show('settings')">设置</button>
+ <span class="graph-note">Codex · DeepSeek</span><span id="state" class="state">正在读取状态</span>
+ <button onclick="document.getElementById('about').classList.remove('hidden')">关于</button>
+</nav>
+<div id="notice" class="banner hidden" role="status"></div>
+<main id="control"><div class="columns"><div>
+ <div class="welcome"><h1>从任务到结果</h1><p>启动执行环境，查看每一步行动与结果。</p></div>
+ <section class="card"><h2>任务运行环境 <span class="tag">Docker</span></h2>
+  <div class="status-line"><span>执行器</span><span>Codex Worker</span></div>
+  <div class="status-line"><span>模型</span><span id="current-model">正在读取</span></div>
+  <div class="status-line"><span>任务输出</span><span id="current-language">简体中文</span></div>
+  <div class="actions"><button data-job="start" class="primary" onclick="action('start')">构建并启动</button><button onclick="show('settings')">配置模型与语言</button></div>
+  <p class="help">点击后会自动打开已安装的 Docker Desktop、等待 Linux 引擎，并准备 Worker 镜像与 Cairn 服务。任务创建与管理位于任务过程图页。</p>
+ </section>
+ <section class="card" style="margin-top:20px"><h2>环境与数据</h2>
+  <div class="status-line"><span>Docker 引擎</span><span id="docker">正在检测</span></div>
+  <div class="status-line"><span>Cairn 服务</span><span id="server">正在检测</span></div>
+  <p class="path" id="storage"></p>
+  <div class="actions"><button data-job onclick="action('check')">检查环境</button><button onclick="action('open_output')">打开任务文件</button><button data-job="stop" onclick="action('stop')">停止服务</button></div>
+  <p class="help">报告与证据位于 output／项目编号／workspace。阶段日志位于 workspace／.cairn／runs。停止服务后仍可查看历史图、回放与归档。</p>
+ </section></div>
+ <section class="card"><h2 style="display:flex;justify-content:space-between;align-items:center">运行日志<button data-job onclick="action('logs')">读取服务日志</button></h2>
+  <pre id="logs" class="log"></pre><div class="actions"><button onclick="copyLogs()">复制日志</button><button class="primary" onclick="show('graph')">进入任务过程图 →</button></div>
+  <p class="help">点击事实节点或行动连线，在右侧查看详情、来源与执行记录。</p>
+ </section></div></main>
+<iframe id="graph" class="hidden" title="任务过程图" src="/graph"></iframe>
+<main id="settings" class="hidden"><div class="settings-wrap">
+ <div class="welcome"><h1>设置</h1><p>管理 Agent 输出、模型连接和图界面偏好。</p></div>
+ <div class="settings-grid">
+  <section class="card"><h2>模型与任务输出</h2>
+   <label class="field" for="key">DeepSeek API Key</label><input id="key" type="password" autocomplete="off" placeholder="留空复用已保存的密钥">
+   <p id="key-state" class="help">密钥只保存在本机数据目录。</p>
+   <label class="field" for="model">模型</label><select id="model"><option value="deepseek-flash">deepseek-flash</option><option value="deepseek-v4-pro">deepseek-v4-pro</option></select>
+   <label class="field" for="output-language">任务输出语言</label><select id="output-language"><option value="zh-CN">简体中文（推荐）</option><option value="en">English</option><option value="auto">跟随原提示词</option></select>
+   <p class="help">控制后续任务的事实说明、行动描述与报告语言。命令、字段名、原始证据及工具日志保留原文；已有任务不会自动翻译。</p>
+   <div class="actions"><button data-job class="primary" onclick="action('save')">保存模型与语言</button></div>
+   <p class="help">保存后需在控制中心点击“构建并启动”重新启动服务。若还有运行中的任务，请先等待完成或停止任务。</p>
+  </section>
+  <section class="card"><h2>图界面偏好</h2>
+   <label class="field" for="layout">图布局</label><select id="layout"><option value="klay_tb">Klay · 纵向</option><option value="klay_lr">Klay · 横向</option><option value="dagre_tb">Dagre · 纵向</option><option value="dagre_lr">Dagre · 横向</option><option value="elk_tb">ELK · 纵向</option><option value="elk_lr">ELK · 横向</option></select>
+   <label class="field" for="actor">人工操作名称</label><input id="actor" maxlength="100" value="用户">
+   <label class="field" for="panel-width">详情面板宽度（像素）</label><input id="panel-width" type="number" min="260" max="1500" value="390">
+   <div class="actions"><button id="save-ui" onclick="savePreferences()">保存界面偏好</button></div>
+   <p class="help">保存后立即应用。图页中调整布局或拖动面板也会保存，重新打开 EXE 后继续使用。</p>
+  </section>
+  <section class="card wide"><h2>执行环境与本机存储</h2>
+   <div class="status-line"><span>执行模式</span><span>Docker · 独立项目容器</span></div>
+   <p class="help">本机执行模式尚未接入桌面版。服务、Worker 镜像由 Docker 管理，模型通过 DeepSeek API 调用。</p>
+   <label class="field">数据根目录</label><p id="settings-storage" class="path"></p>
+   <div class="actions"><button onclick="action('open_storage')">打开数据目录</button><button onclick="action('open_output')">打开任务产物</button></div>
+   <p class="help">data 存放数据库与设置；output 存放每个项目的报告、证据和执行记录。便携使用时将 EXE 与 CairnDesktopData 一起复制。</p>
+  </section>
+  <section class="card wide"><h2>关闭行为</h2><label class="field" for="close-behavior">关闭主窗口时</label><select id="close-behavior"><option value="ask">每次询问</option><option value="exit">退出并停止服务</option><option value="tray">最小化到系统托盘</option></select><div class="actions"><button id="save-close" onclick="saveCloseBehavior()">保存关闭行为</button></div><p id="close-choice" class="help">关闭时可以选择退出并停止服务，或隐藏到系统托盘让服务继续运行。</p><p class="help">首次关闭时会询问一次。选择“记住此选项”后，此页会显示并可随时更改。</p></section>
+ </div><p class="settings-foot">Cairn 桌面控制中心 0.7.0 · 开发者 RoamerFly</p>
+</div></main>
+<div id="about" class="about hidden" onclick="if(event.target===this)this.classList.add('hidden')"><section class="card">
+ <img src="/desktop-icons/cairn.png" alt="Cairn 图标"><h2>Cairn 桌面控制中心 0.7.0</h2>
+ <p>开发者：RoamerFly<br>Cairn 核心：0.2.1<br>界面：原项目 UI · WebView2<br>执行：Codex Worker · DeepSeek API · Docker</p>
+ <p><a target="_blank" rel="noreferrer" href="https://github.com/RoamerFly">开发者主页</a> · <a target="_blank" rel="noreferrer" href="https://github.com/RoamerFly/Cairn-fork-to-desktop">项目仓库</a> · <a target="_blank" rel="noreferrer" href="https://github.com/RoamerFly/Cairn-fork-to-desktop/issues">问题反馈</a></p>
+ <button onclick="document.getElementById('about').classList.add('hidden')">关闭</button>
+</section></div>
+<div id="shutdown-overlay" class="shutdown-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shutdown-title">
+ <section class="shutdown-panel">
+  <header class="shutdown-head"><img src="/desktop-icons/cairn.png" alt=""><div><h2 id="shutdown-title">离开 Cairn？</h2><p>选择退出方式，管理正在运行的 Agent 服务</p></div></header>
+  <div class="shutdown-body">
+   <div id="shutdown-choices"><p class="shutdown-intro">你可以结束本次桌面会话，或让任务在后台继续运行。</p>
+    <button class="shutdown-option" onclick="closeWindowAction('exit')"><span class="symbol"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v10"/><path d="M6.1 5.9a9 9 0 1 0 11.8 0"/></svg></span><span><strong>退出并停止服务</strong><small>停止 Cairn 服务与运行中的任务，然后关闭程序</small></span></button>
+    <button class="shutdown-option tray" onclick="closeWindowAction('tray')"><span class="symbol"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 21h10M12 10v6m0 0-3-3m3 3 3-3"/></svg></span><span><strong>最小化到托盘</strong><small>隐藏窗口，任务和服务继续运行；可从托盘恢复</small></span></button>
+    <div class="shutdown-footer"><label><input id="shutdown-remember" type="checkbox">记住此选项，可在设置中更改</label><button id="shutdown-cancel" onclick="hideCloseDialog()">继续使用</button></div>
+   </div>
+   <div id="shutdown-wait" class="hidden"><p class="shutdown-progress">正在停止服务并退出，请稍候。若 Docker 正在执行操作，可能需要等待它结束。</p><p id="shutdown-error" class="shutdown-error hidden"></p><div class="shutdown-footer"><span class="help">关闭程序后，历史记录仍会保存在数据目录。</span><button class="shutdown-danger" onclick="forceCloseWindow()">立即退出</button></div></div>
+  </div>
+ </section>
+</div>
+<script>
+const token='__TOKEN__';let initialized=false,jobPending=false,closePending=false,previousError='';
+const $=id=>document.getElementById(id);
+function notify(message,error=false){$('notice').textContent=message;$('notice').classList.remove('hidden');$('notice').classList.toggle('error',error);}
+function show(page){for(const name of ['control','graph','settings']){$(name).classList.toggle('hidden',page!==name);$(name+'-tab').classList.toggle('active',page===name);}if(page==='graph')$('graph').contentWindow.dispatchEvent(new Event('resize'));if(page==='settings')loadPreferences();}
+async function request(path,method='GET',body){const r=await fetch(path,{method,headers:{'Content-Type':'application/json','X-Cairn-Token':token},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(data.detail||'操作失败');return data;}
+async function status(){try{const s=await request('/desktop/status');$('state').textContent=s.busy?'正在处理…':s.server?'服务运行中':s.compose_running?'服务仍在运行':s.docker?'服务已停止':'离线历史可查看';$('state').classList.toggle('running',s.server);$('docker').textContent=s.docker_text;$('server').textContent=s.server?'运行中':'未运行';$('storage').textContent=s.storage;$('settings-storage').textContent=s.storage;$('key-state').textContent=s.key_configured?'已保存密钥；留空时复用本机配置。':'密钥只保存在本机数据目录。';$('current-model').textContent=s.model;$('current-language').textContent={'zh-CN':'简体中文',en:'English',auto:'跟随原提示词'}[s.output_language]||'跟随原提示词';document.querySelectorAll('[data-job]').forEach(b=>b.disabled=s.busy||jobPending||(b.dataset.job==='start'&&s.server)||(b.dataset.job==='stop'&&!s.server&&!s.compose_running));const log=$('logs'),nearEnd=log.scrollHeight-log.scrollTop-log.clientHeight<40,old=log.textContent;log.textContent=s.logs.join('\n');if(nearEnd&&old!==log.textContent)log.scrollTop=log.scrollHeight;if(s.error&&s.error!==previousError)notify(s.error,true);previousError=s.error;if(!initialized){$('model').value=s.model;$('output-language').value=s.output_language;initialized=true;}return s;}catch(e){$('state').textContent='状态连接中断';$('state').classList.remove('running');document.querySelectorAll('[data-job]').forEach(b=>b.disabled=true);notify(String(e),true);return null;}}
+async function action(name){if(jobPending)return;jobPending=true;document.querySelectorAll('[data-job]').forEach(b=>b.disabled=true);try{await status();const body={action:name};if(name==='save'||name==='start')Object.assign(body,{api_key:$('key').value,model:$('model').value,output_language:$('output-language').value});await request('/desktop/action','POST',body);if(name==='save'||name==='start')$('key').value='';if(name==='save')notify('正在保存模型与语言，完成情况请查看运行日志。保存后重新启动服务生效。');else if(name==='start')notify('正在构建并启动，请查看运行日志。');else if(name==='stop')notify('正在停止服务，请稍候。');else if(name==='check')notify('正在检查运行环境，请稍候。');else if(name==='logs')notify('正在读取服务日志，请稍候。');let s,failedReads=0;do{await new Promise(resolve=>setTimeout(resolve,500));s=await status();if(!s&&++failedReads>=6)throw new Error('连续无法读取运行状态；请检查桌面程序。');if(s)failedReads=0;}while(!s||s.busy);}catch(e){notify(e.message,true);}finally{jobPending=false;await status();}}
+async function loadPreferences(){try{const p=await request('/desktop/preferences');$('layout').value=p.layout_mode||'klay_tb';$('actor').value=p.actor_name==='Human'?'用户':p.actor_name||'用户';$('panel-width').value=p.sidePanelWidth||390;renderClosePreference(p);}catch(e){notify(e.message,true);}}
+async function savePreferences(){const width=Number($('panel-width').value);if(!Number.isInteger(width)||width<260||width>1500){notify('详情面板宽度需为 260–1500 的整数。',true);return;}$('save-ui').disabled=true;try{const p=await request('/desktop/preferences','PUT',{layout_mode:$('layout').value,actor_name:$('actor').value.trim()||'用户',sidePanelWidth:width,remember_close:$('close-behavior').value!=='ask',close_behavior:$('close-behavior').value});const frame=$('graph').contentWindow;if(frame.desktopGraphApp)frame.desktopGraphApp.applyDesktopPreferences(p);renderClosePreference(p);notify('界面偏好已保存并应用。');}catch(e){notify(e.message,true);}finally{$('save-ui').disabled=false;}}
+function renderClosePreference(p){$('close-behavior').value=p.remember_close?p.close_behavior:'ask';$('close-choice').textContent=p.remember_close?`已记住：${p.close_behavior==='tray'?'最小化到系统托盘':'退出并停止服务'}。可在此更改。`:'关闭时询问；你可以选择退出并停止服务，或最小化到系统托盘。';}
+async function saveCloseBehavior(){const button=$('save-close');button.disabled=true;try{const p=await request('/desktop/preferences');const behavior=$('close-behavior').value;const saved=await request('/desktop/preferences','PUT',{...p,remember_close:behavior!=='ask',close_behavior:behavior});renderClosePreference(saved);notify('关闭行为已保存。');}catch(e){notify(e.message,true);}finally{button.disabled=false;}}
+async function copyLogs(){const text=$('logs').textContent||'';if(!text){notify('当前没有可复制的运行日志。');return;}try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);else{const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();const copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('浏览器拒绝复制');}notify('运行日志已复制到剪贴板。');}catch(e){notify('复制失败，请选中日志文本后按 Ctrl+C。',true);}}
+function showCloseDialog(){if(closePending)return;$('shutdown-remember').checked=false;$('shutdown-choices').classList.remove('hidden');$('shutdown-wait').classList.add('hidden');$('shutdown-error').classList.add('hidden');$('shutdown-overlay').classList.remove('hidden');document.querySelectorAll('.shutdown-option').forEach(b=>b.disabled=false);$('shutdown-cancel').disabled=false;}
+function hideCloseDialog(resetTopmost=true){if(closePending)return;$('shutdown-overlay').classList.add('hidden');if(resetTopmost)request('/desktop/window','POST',{action:'dismiss'}).catch(e=>notify(e.message,true));}
+function showCloseProgress(){$('shutdown-overlay').classList.remove('hidden');$('shutdown-choices').classList.add('hidden');$('shutdown-wait').classList.remove('hidden');$('shutdown-error').classList.add('hidden');}
+function closeFailed(message){showCloseProgress();$('shutdown-error').textContent='服务停止失败：'+message+'。可点击“立即退出”，但服务可能仍在后台运行。';$('shutdown-error').classList.remove('hidden');}
+async function closeWindowAction(choice){if(!['exit','tray'].includes(choice)||closePending)return;closePending=true;document.querySelectorAll('.shutdown-option').forEach(b=>b.disabled=true);$('shutdown-cancel').disabled=true;const remember=$('shutdown-remember').checked;try{if(remember){const p=await request('/desktop/preferences');const saved=await request('/desktop/preferences','PUT',{...p,remember_close:true,close_behavior:choice});renderClosePreference(saved);}if(choice==='exit')showCloseProgress();else $('shutdown-overlay').classList.add('hidden');await request('/desktop/window','POST',{action:choice});if(choice==='tray')closePending=false;}catch(e){closePending=false;showCloseDialog();$('shutdown-error').textContent=e.message;$('shutdown-error').classList.remove('hidden');notify(e.message,true);}}
+async function forceCloseWindow(){try{await request('/desktop/window','POST',{action:'force_exit'});}catch(e){notify('正在退出…',true);}}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('shutdown-overlay').classList.contains('hidden')&&!$('shutdown-choices').classList.contains('hidden'))hideCloseDialog();});
+status();setInterval(status,3000);
+</script></body></html>

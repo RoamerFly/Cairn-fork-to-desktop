@@ -1,0 +1,37 @@
+name: cairn-desktop
+
+services:
+  cairn-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cairn-desktop-app
+    environment:
+      # The DB lives in a Windows-host bind mount on desktop installs. DELETE
+      # journaling avoids SQLite WAL shared-memory/locking issues on that mount.
+      CAIRN_SQLITE_JOURNAL_MODE: DELETE
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ../data/cairn/:/root/.local/share/cairn/
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/projects', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 3s
+    command: ["uv", "run", "cairn", "serve", "--host", "0.0.0.0", "--no-access-log"]
+
+  cairn-dispatcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cairn-desktop-app
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../data/dispatch.yaml:/cairn/dispatch.yaml:ro
+      - ../output:/cairn/agent-output
+    depends_on:
+      cairn-server:
+        condition: service_healthy
+    command: ["uv", "run", "cairn", "dispatch", "--config", "dispatch.yaml"]

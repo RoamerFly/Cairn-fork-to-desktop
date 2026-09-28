@@ -1,0 +1,24 @@
+<div class="space-y-3">
+  <template x-if="selectedFactId() === 'origin' || selectedFactId() === 'goal'">
+    <button type="button" @click="openDesktopOriginalFact()" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-brand-700 hover:bg-brand-50">查看原始事实 ↗</button>
+  </template>
+  <template x-if="selectedFactId() !== 'origin' && selectedFactId() !== 'goal'">
+    <div class="space-y-3">
+      <section class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold text-indigo-800">漏洞结果</h3>
+          <button type="button" @click="generateDesktopFinding()" :disabled="desktopFindingBusy"
+            class="px-2.5 py-1 rounded-lg border border-indigo-200 bg-white text-xs text-indigo-700 disabled:opacity-50"
+            x-text="desktopFindingBusy ? '正在整理…' : desktopFinding.available ? '重新整理' : '整理结果'"></button>
+        </div>
+        <button type="button" x-show="desktopFinding.available" @click="openDesktopFindingModal()"
+          class="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-left text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+          x-text="`查看结果（${desktopFinding.findings.length} 条） ↗`"></button>
+        <p class="text-xs text-slate-500">按需使用已保存的模型配置整理当前事实；保留原始记录，模型整理会消耗 Token。</p>
+        <p x-show="desktopFindingError" class="text-xs text-rose-600 break-words" x-text="desktopFindingError"></p>
+        <p x-show="!desktopFinding.available && !desktopFindingBusy && !desktopFindingError" class="text-xs text-slate-500">尚未整理。点击“整理结果”查看结构化发现。</p>
+      </section>
+      <button type="button" @click="openDesktopOriginalFact()" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium text-brand-700 hover:bg-brand-50">查看原始事实（完整记录） ↗</button>
+    </div>
+  </template>
+</div>

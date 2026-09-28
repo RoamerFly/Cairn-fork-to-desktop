@@ -1,0 +1,15 @@
+<div x-show="desktopOriginalFactOpen" class="fixed inset-0 flex items-center justify-center p-6"
+     style="display:none;z-index:9999;background:rgba(15,23,42,.65);backdrop-filter:blur(6px)"
+     @click.self="desktopOriginalFactOpen=false" @keydown.escape.window="desktopOriginalFactOpen=false">
+  <section role="dialog" aria-modal="true" aria-label="原始事实" class="bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+           style="width:min(900px,96vw);height:min(720px,82vh)">
+    <div class="shrink-0 px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-4">
+      <div class="min-w-0"><div class="text-base font-semibold text-slate-800">原始事实</div><div class="text-xs text-slate-500 mt-1">完整保留 Agent 写入的内容 · <span class="font-mono" x-text="desktopOriginalFactId"></span></div></div>
+      <button type="button" @click="desktopOriginalFactOpen=false" aria-label="关闭原始事实弹窗" class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">关闭</button>
+    </div>
+    <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5" style="scrollbar-gutter:stable">
+      <p class="text-sm text-slate-700 leading-7 whitespace-pre-wrap break-words select-text" x-text="desktopOriginalFactText"></p>
+    </div>
+    <div class="shrink-0 px-6 py-3 border-t border-slate-100 bg-white text-xs text-slate-400">可选中文字并复制；长内容只滚动正文，弹窗尺寸保持不变。</div>
+  </section>
+</div>

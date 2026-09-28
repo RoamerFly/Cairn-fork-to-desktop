@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import io
 import logging
-from pathlib import PurePosixPath
+import os
+from pathlib import Path, PurePosixPath
+import re
+import socket
 import tarfile
 import threading
 
@@ -22,11 +25,27 @@ class ContainerManager:
     def __init__(self, config: ContainerConfig):
         self._config = config
         self._client = docker.from_env()
+        self._persistence_host_root: Path | None = None
+        self._persistence_local_root: Path | None = None
+        if config.persistence_root:
+            local_root = Path(config.persistence_root)
+            if not local_root.is_absolute():
+                raise ValueError("container.persistence_root must be an absolute path")
+            current = self._client.containers.get(socket.gethostname())
+            mounts = current.attrs.get("Mounts", [])
+            mount = next((item for item in mounts if item.get("Destination") == str(local_root)), None)
+            if not mount or mount.get("Type") != "bind" or not mount.get("Source"):
+                raise RuntimeError(f"dispatcher is missing bind mount for {local_root}")
+            self._persistence_host_root = Path(mount["Source"])
+            self._persistence_local_root = local_root
         self._ensure_running_locks: dict[str, threading.Lock] = {}
         self._ensure_running_locks_guard = threading.Lock()
 
     def close(self) -> None:
         self._client.close()
+
+    def artifact_root(self) -> str | None:
+        return "/home/kali/workspace/.cairn" if self._persistence_host_root is not None else None
 
     def container_name(self, project_id: str) -> str:
         sanitized = project_id.replace("/", "-")
@@ -40,22 +59,31 @@ class ContainerManager:
     def _ensure_running_locked(self, project_id: str, name: str) -> str:
         state = self.inspect_state(name)
         if state == "running":
+            self._verify_workspace_mounts(name)
             LOG.debug("container already running project=%s container=%s", project_id, name)
             return name
         if state is not None:
+            self._verify_workspace_mounts(name)
             LOG.info("starting existing container project=%s container=%s state=%s", project_id, name, state)
             self._start_existing(name)
             return name
         LOG.info("creating container project=%s container=%s image=%s", project_id, name, self._config.image)
         try:
-            self._client.containers.run(
+            volumes = self._workspace_volumes(project_id)
+            container = self._client.containers.run(
                 self._config.image,
                 ["sleep", "infinity"],
                 detach=True,
                 name=name,
                 network_mode=self._config.network_mode,
                 cap_add=self._config.cap_add or None,
+                volumes=volumes or None,
             )
+            if volumes:
+                result = container.exec_run(["git", "init", "--quiet", "/home/kali/workspace"])
+                if result.exit_code != 0:
+                    container.remove(force=True)
+                    raise RuntimeError(f"failed to initialize agent workspace for project {project_id}")
             LOG.info("created container project=%s container=%s", project_id, name)
             return name
         except APIError as exc:
@@ -64,12 +92,66 @@ class ContainerManager:
         LOG.info("container name conflict, reusing existing container project=%s container=%s", project_id, name)
         state = self.inspect_state(name)
         if state == "running":
+            self._verify_workspace_mounts(name)
             return name
         if state is not None:
+            self._verify_workspace_mounts(name)
             LOG.info("starting conflicted existing container project=%s container=%s state=%s", project_id, name, state)
             self._start_existing(name)
             return name
         raise RuntimeError(f"failed to create container {name}")
+
+    def _workspace_volumes(self, project_id: str) -> dict[str, dict[str, str]]:
+        if self._persistence_host_root is None or self._persistence_local_root is None:
+            return {}
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", project_id):
+            raise ValueError(f"invalid project id for persistent workspace: {project_id}")
+        project_root = self._persistence_local_root / project_id
+        workspace = project_root / "workspace"
+        codex_state = project_root / "codex"
+        for directory in (project_root, workspace, codex_state):
+            directory.mkdir(parents=True, exist_ok=True)
+            try:
+                os.chmod(directory, 0o777)
+            except OSError as exc:
+                LOG.warning("could not set agent workspace permissions path=%s error=%s", directory, exc)
+        instructions = workspace / "AGENTS.md"
+        if not instructions.exists():
+            instructions.write_text(
+                "# Cairn Desktop workspace\n"
+                "Keep testing notes, command output and evidence in this project directory. "
+                "Work only within the target and goal supplied for this project. "
+                "Do not write API keys or credentials into evidence files.\n",
+                encoding="utf-8",
+            )
+        return {
+            str(self._persistence_host_root / project_id / "workspace"): {
+                "bind": "/home/kali/workspace", "mode": "rw"
+            },
+            str(self._persistence_host_root / project_id / "codex"): {
+                "bind": "/home/kali/.codex", "mode": "rw"
+            },
+        }
+
+    def _verify_workspace_mounts(self, name: str) -> None:
+        if self._persistence_host_root is None:
+            return
+        container = self._require_container(name)
+        mounts = {mount.get("Destination"): mount for mount in container.attrs.get("Mounts", [])}
+        project_id = name.removeprefix(self._PREFIX)
+        expected = self._workspace_volumes(project_id)
+
+        def normalized(path: str) -> str:
+            return path.replace("\\", "/").rstrip("/")
+
+        if any(
+            mounts.get(volume["bind"], {}).get("Type") != "bind"
+            or normalized(str(mounts.get(volume["bind"], {}).get("Source", ""))) != normalized(source)
+            for source, volume in expected.items()
+        ):
+            raise RuntimeError(
+                f"existing worker {name} uses a different workspace; preserve its files and remove it before resuming"
+            )
 
     def _ensure_running_lock(self, name: str) -> threading.Lock:
         with self._ensure_running_locks_guard:

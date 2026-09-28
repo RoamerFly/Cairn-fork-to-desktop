@@ -129,7 +129,19 @@ def test_codex_driver_execute_argv_passes_model_endpoint_and_prompt() -> None:
 
     argv = CodexDriver().build_execute(worker, "prompt", None).argv
 
+    assert "--json" in argv
     assert "--model" in argv
     assert "gpt-test" in argv
     assert 'model_providers.cairn.base_url="http://api/v1"' in argv
     assert argv[-2:] == ["--", "prompt"]
+
+
+def test_codex_jsonl_output_is_parsed_for_response_and_session() -> None:
+    driver = CodexDriver()
+    output = '\n'.join([
+        '{"type":"thread.started","thread_id":"thread-123"}',
+        '{"type":"item.completed","item":{"type":"agent_message","text":"{\\"accepted\\":true}"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}',
+    ])
+    assert driver.extract_session(None, output, "") == "thread-123"
+    assert driver.extract_response_text(output, "") == '{"accepted":true}'

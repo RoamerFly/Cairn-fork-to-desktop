@@ -101,7 +101,7 @@ def run_reason_task(
             len(open_intents),
         )
         prompt = render_prompt(
-            load_prompt(config.runtime.prompt_group, "reason.md"),
+            load_prompt(config.runtime.prompt_group, "reason.md", config.runtime.output_language),
             {
                 "graph_yaml": write_graph_snapshot_reference(
                     container_manager,

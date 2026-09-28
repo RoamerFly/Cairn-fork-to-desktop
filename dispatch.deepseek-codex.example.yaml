@@ -1,0 +1,43 @@
+# Copy this file to dispatch.yaml and replace the API key placeholder.
+# Used with desktop/cairn-desktop.compose.yaml on Docker Desktop (Linux containers).
+# DeepSeek Responses API: https://api-docs.deepseek.com/guides/responses_api/
+server: "http://cairn-server:8000"
+
+runtime:
+  execution: container
+  interval: 3
+  max_workers: 2
+  max_running_projects: 1
+  max_project_workers: 2
+  healthcheck_timeout: 60
+  worker_healthcheck: startup_only
+  prompt_group: default
+  output_language: zh-CN
+
+tasks:
+  bootstrap:
+    timeout: 300
+    conclude_timeout: 90
+  reason:
+    timeout: 180
+    max_intents: 2
+  explore:
+    timeout: 600
+    conclude_timeout: 120
+
+container:
+  image: "ghcr.io/oritera/cairn-worker-container:latest"
+  network_mode: "bridge"
+  completed_action: stop
+  persistence_root: "/cairn/agent-output"
+
+workers:
+  - name: "codex-deepseek"
+    type: codex
+    task_types: [bootstrap, reason, explore]
+    max_running: 2
+    priority: 0
+    env:
+      CODEX_MODEL: "deepseek-flash"
+      CODEX_BASE_URL: "https://api.deepseek.com"
+      OPENAI_API_KEY: "REPLACE_WITH_YOUR_DEEPSEEK_API_KEY"

@@ -5,8 +5,17 @@ from importlib import resources
 from typing import Any
 
 
-def load_prompt(group: str, name: str) -> str:
-    return resources.files("cairn.dispatcher.prompts").joinpath(group).joinpath(name).read_text(encoding="utf-8")
+def load_prompt(group: str, name: str, output_language: str = "auto") -> str:
+    text = resources.files("cairn.dispatcher.prompts").joinpath(group).joinpath(name).read_text(encoding="utf-8")
+    languages = {"zh-CN": "Simplified Chinese (简体中文)", "en": "English"}
+    if output_language in languages:
+        text += (
+            "\n\n## User-facing output language\n"
+            f"Write all user-facing fact descriptions, intent descriptions, summaries and report files in {languages[output_language]}. "
+            "Keep JSON field names, identifiers, commands, paths and verbatim evidence unchanged. "
+            "This language requirement applies even when task context or previous records use a different language.\n"
+        )
+    return text
 
 
 def render_prompt(template: str, replacements: dict[str, str]) -> str:
