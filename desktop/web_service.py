@@ -26,6 +26,7 @@ class DesktopService:
         self.logs = deque(maxlen=2000)
         self.error = ""
         self.docker = (False, "正在检测")
+        self.compose_running = False
         self.key, self.model = load_saved_settings(data_root() / "dispatch.yaml")
         settings = data_root() / "dispatch.yaml"
         saved = yaml.safe_load(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
@@ -41,7 +42,9 @@ class DesktopService:
     def status(self):
         with self.lock:
             state = {"busy": self.busy, "logs": list(self.logs), "error": self.error}
-        return {**state, "server": server_available(), "docker": self.docker[0],
+        server = server_available()
+        return {**state, "server": server, "docker": self.docker[0],
+                "compose_running": self.compose_running,
                 "docker_text": self.docker[1], "key_configured": bool(self.key),
                 "model": self.model, "output_language": self.output_language,
                 "storage": str(storage_root()), "mode": "docker"}
@@ -87,6 +90,15 @@ class DesktopService:
 
     def check(self):
         self.docker = docker_available()
+        self.compose_running = False
+        if self.docker[0]:
+            try:
+                result = subprocess.run(self.compose("ps", "--status", "running", "--services"),
+                    cwd=runtime_root(), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    timeout=15, creationflags=CREATE_NO_WINDOW)
+                self.compose_running = result.returncode == 0 and bool(result.stdout.strip())
+            except (OSError, subprocess.TimeoutExpired):
+                self.log("无法确认 Compose 服务状态，将由启动流程重新检查。")
 
     def save(self, body):
         key = body.get("api_key", "").strip() or self.key
@@ -122,10 +134,14 @@ class DesktopService:
             process.stdout.close()
 
     def start(self, body):
-        self.save(body)
+        if server_available():
+            raise RuntimeError("Cairn 服务已运行。请使用“停止服务”后再重新启动。")
         self.check()
+        if self.compose_running:
+            raise RuntimeError("Cairn Compose 服务仍在运行。请先停止服务，再重新启动。")
         if not self.docker[0]:
             raise RuntimeError("请先启动 Docker Desktop 的 Linux 引擎。")
+        self.save(body)
         installed = subprocess.run(["docker", "image", "inspect", WORKER_IMAGE],
                                    capture_output=True, timeout=15, creationflags=CREATE_NO_WINDOW)
         if installed.returncode:
@@ -134,6 +150,7 @@ class DesktopService:
         else:
             self.log("复用本机已安装的 Worker 镜像。")
         self.command(self.compose("up", "-d", "--build", "--force-recreate"))
+        self.compose_running = True
         self.log("Cairn 服务已启动。")
 
     def stop(self):
@@ -153,4 +170,5 @@ class DesktopService:
                 self.log(f"已停止 {len(active)} 个任务，等待 Worker 清理。")
                 time.sleep(5)
         self.command(self.compose("stop"))
+        self.compose_running = False
         self.log("服务已停止，历史图与任务文件保留。")

@@ -1,6 +1,6 @@
 # Cairn Windows 桌面版
 
-`CairnDesktop.exe` 0.6.0 是 Cairn 的单文件 Windows 桌面控制台，用于配置和运行 Docker 中的 Cairn 服务及 Codex Worker。图界面直接复用原项目的 HTML、Cytoscape、Dagre/Klay/ELK 布局与 Alpine 交互，通过 WebView2 放进同一个桌面窗口；控制中心与常用图操作使用中文。程序内含 Cairn 源码、锁文件、Dockerfile、Compose 配置和 DeepSeek/Codex 配置模板。目标电脑无需另装 Python，但需要 Microsoft Edge WebView2 Runtime；执行任务仍需要 Docker Desktop 运行 Linux 容器。Windows 命名互斥量保证界面只运行一个实例，重复打开会切回已打开的窗口。
+`CairnDesktop.exe` 0.7.0 是 Cairn 的单文件 Windows 桌面控制台，用于配置和运行 Docker 中的 Cairn 服务及 Codex Worker。图界面直接复用原项目的 HTML、Cytoscape、Dagre/Klay/ELK 布局与 Alpine 交互，通过 WebView2 放进同一个桌面窗口；控制中心与常用图操作使用中文。程序内含 Cairn 源码、锁文件、Dockerfile、Compose 配置和 DeepSeek/Codex 配置模板。目标电脑无需另装 Python，但需要 Microsoft Edge WebView2 Runtime；执行任务仍需要 Docker Desktop 运行 Linux 容器。Windows 命名互斥量保证界面只运行一个实例，重复打开会切回已打开的窗口。
 
 首次启动时，EXE 同级会自动创建 `CairnDesktopData`：`app` 保存解压的运行文件，`data` 保存配置与 SQLite 数据库，`output/<项目 ID>/workspace` 保存 Agent 的工作文件，`output/<项目 ID>/codex` 保存 Codex 会话。DeepSeek API Key 以明文保存在 `CairnDesktopData\data\dispatch.yaml`，不会被打包进 EXE。控制中心不回传已保存密钥；输入框留空会复用本机配置。`data/ui.json` 保存图布局和面板宽度，`data/webview` 保存浏览器运行数据。旧版 `%LOCALAPPDATA%\CairnDesktop` 的配置和数据库会复制到新目录，旧文件保留。请把 EXE 放在可写目录；复制 EXE 时连同 `CairnDesktopData` 一起复制即可迁移状态。可用 `CAIRN_DESKTOP_STORAGE_ROOT` 覆盖存储根目录。Cairn API 服务仅监听 `127.0.0.1:8000`；桌面 UI 使用独立的随机本地端口，只绑定回环地址。
 
@@ -26,9 +26,11 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 
 本机模式的成本与推荐方案见 [本机执行改造方案](LOCAL_MODE_PLAN.md)。0.5.0 调整的是桌面 UI，执行端仍为 Docker。
 
-## 设置与输出语言（0.6.0）
+## 设置与运行（0.7.0）
 
 顶部“设置”页集中管理 DeepSeek 密钥、模型、任务输出语言、图布局、人工操作名称、详情面板宽度和本机存储入口。密钥留空时复用已保存配置，不回传到页面；图偏好保存后立即应用。模型与语言保存后需通过“构建并启动”重新启动服务，运行中的任务请先完成或停止。
+
+“运行日志”区域的“复制日志”按钮可将当前日志复制到剪贴板，也支持鼠标选择后按 Ctrl+C。关闭窗口首次会弹出选项：直接退出并停止服务、最小化到系统托盘或继续使用；左下复选框可记住所选行为。设置页可以查看、更改关闭行为，托盘菜单支持恢复和退出。重新启动时会检查 API 与 Compose 服务状态，避免对已运行的服务再次构建启动。
 
 桌面模板默认 `runtime.output_language: zh-CN`。Dispatcher 对初始化、规划、探索和收尾五类提示词追加输出语言要求，事实说明、行动描述、总结及报告使用简体中文；JSON 字段、命令、标识符及原始证据保留原文。可选择 English 或跟随原提示词，核心配置未指定语言时沿用旧行为。历史任务的数据库与报告不会自动改写，第三方工具原始日志也不会强制翻译。
 
@@ -44,7 +46,7 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 desktop\build_windows.bat
 ```
 
-批处理脚本会在 `desktop\build\.venv` 创建独立的 Python 构建环境，并在缺少构建依赖时安装 PyInstaller、pywebview 6.2.1、PyYAML 和测试所需库。产物是 `desktop\dist_windows\CairnDesktop.exe`。Windows EXE 须在 Windows 上构建。构建脚本生成运行包后，也可以用 `python desktop/web_main.py` 直接调试新界面。`gui.py` 和原生 Canvas 图保留为旧实现，不是当前 EXE 的入口。
+批处理脚本会在 `desktop\build\.venv` 创建独立的 Python 构建环境，并在缺少构建依赖时安装 PyInstaller、pywebview 6.2.1、PyYAML 和测试所需库。产物是 `desktop\dist_windows\CairnDesktop.exe`。当前主窗口打开时，可以用 `python desktop/build.py --staging` 将新版另存为同目录的 `CairnDesktop-0.7.0.exe`；关闭旧窗口后运行该文件即可使用新版。Windows EXE 须在 Windows 上构建。构建脚本生成运行包后，也可以用 `python desktop/web_main.py` 直接调试新界面。`gui.py` 和原生 Canvas 图保留为旧实现，不是当前 EXE 的入口。
 
 运行包保留原项目 `LICENSE`，构建时收集第三方依赖声明至 `app/licenses/THIRD_PARTY_NOTICES.txt`，并在可用时保留 Python 许可证。原图脚本仍使用仓库自带的资源，不依赖在线 CDN。
 

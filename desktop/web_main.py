@@ -8,6 +8,7 @@ import webview
 from core import APP_TITLE, bundled_payload, data_root, ensure_runtime, migrate_legacy_storage, output_root, runtime_root, storage_root
 from single_instance import SingleInstance
 from web_host import DesktopHost
+from window_lifecycle import install_window_lifecycle
 
 
 def main(test_callback=None):
@@ -28,6 +29,7 @@ def main(test_callback=None):
         width = min(1440, max(900, screen.width - 70))
         height = min(930, max(620, screen.height - 90))
         window = webview.create_window(APP_TITLE, host.url, width=width, height=height, min_size=(900, 620))
+        install_window_lifecycle(window, host, Path(__file__).resolve().parent / "assets" / "cairn.ico")
         host.service.action('check', {})
         def started():
             if test_callback:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import importlib.metadata
+import argparse
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -60,7 +61,7 @@ def build_payload() -> Path:
     return ZIP_PATH
 
 
-def main() -> None:
+def main(staging: bool = False) -> None:
     if sys.platform != "win32":
         raise SystemExit("Build the Windows EXE on Windows.")
     payload = build_payload()
@@ -74,7 +75,7 @@ def main() -> None:
             "--onefile",
             "--windowed",
             "--name",
-            "CairnDesktop",
+            "CairnDesktop-0.7.0" if staging else "CairnDesktop",
             "--icon",
             str(DESKTOP / "assets" / "cairn.ico"),
             "--distpath",
@@ -96,8 +97,10 @@ def main() -> None:
         cwd=ROOT,
         check=True,
     )
-    print(DIST_PATH / "CairnDesktop.exe")
+    print(DIST_PATH / ("CairnDesktop-0.7.0.exe" if staging else "CairnDesktop.exe"))
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--staging", action="store_true", help="Build beside the live EXE as CairnDesktop-0.7.0.exe")
+    main(staging=parser.parse_args().staging)

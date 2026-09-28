@@ -97,19 +97,38 @@ class DesktopHost:
                     if path == "/desktop/preferences":
                         preferences = data_root() / "ui.json"
                         if self.command == "GET":
-                            return self.reply(200, json.loads(preferences.read_text(encoding="utf-8")) if preferences.is_file() else {})
+                            defaults = {"layout_mode": "klay_tb", "actor_name": "用户",
+                                        "sidePanelWidth": 390, "remember_close": False,
+                                        "close_behavior": "ask"}
+                            saved = json.loads(preferences.read_text(encoding="utf-8")) if preferences.is_file() else {}
+                            return self.reply(200, {**defaults, **saved})
                         if self.command == "PUT":
                             request = json.loads(body)
                             mode = request.get("layout_mode", "klay_tb")
                             if mode not in {"klay_tb", "klay_lr", "dagre_tb", "dagre_lr", "elk_tb", "elk_lr"}:
                                 raise ValueError("无效布局")
                             prefs = {"layout_mode": mode, "actor_name": str(request.get("actor_name", "Human"))[:100],
-                                     "sidePanelWidth": max(260, min(1500, int(request.get("sidePanelWidth", 390))))}
+                                     "sidePanelWidth": max(260, min(1500, int(request.get("sidePanelWidth", 390)))),
+                                     "remember_close": bool(request.get("remember_close", False)),
+                                     "close_behavior": request.get("close_behavior", "ask")}
+                            if prefs["close_behavior"] not in {"ask", "exit", "tray"}:
+                                raise ValueError("无效的窗口关闭选项")
+                            if not prefs["remember_close"]:
+                                prefs["close_behavior"] = "ask"
                             data_root().mkdir(parents=True, exist_ok=True)
                             staged = preferences.with_suffix(".tmp")
                             staged.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
                             staged.replace(preferences)
                             return self.reply(200, prefs)
+                    if path == "/desktop/window" and self.command == "POST":
+                        request = json.loads(body)
+                        if request.get("action") == "tray" and owner.minimize_to_tray:
+                            owner.minimize_to_tray()
+                        elif request.get("action") == "exit" and owner.exit_application:
+                            owner.exit_application()
+                        else:
+                            return self.reply(400, {"detail": "未知窗口操作"})
+                        return self.reply(200, {"accepted": True})
                     if path == "/desktop/action" and self.command == "POST":
                         request = json.loads(body)
                         return self.reply(200, owner.service.action(request.pop("action"), request))
@@ -167,6 +186,8 @@ class DesktopHost:
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
+        self.minimize_to_tray = None
+        self.exit_application = None
 
     def start(self):
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
