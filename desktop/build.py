@@ -75,7 +75,7 @@ def main(staging: bool = False) -> None:
             "--onefile",
             "--windowed",
             "--name",
-            "CairnDesktop-0.7.0" if staging else "CairnDesktop",
+            "CairnDesktop-0.7.0-update" if staging else "CairnDesktop",
             "--icon",
             str(DESKTOP / "assets" / "cairn.ico"),
             "--distpath",
@@ -97,10 +97,10 @@ def main(staging: bool = False) -> None:
         cwd=ROOT,
         check=True,
     )
-    print(DIST_PATH / ("CairnDesktop-0.7.0.exe" if staging else "CairnDesktop.exe"))
+    print(DIST_PATH / ("CairnDesktop-0.7.0-update.exe" if staging else "CairnDesktop.exe"))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--staging", action="store_true", help="Build beside the live EXE as CairnDesktop-0.7.0.exe")
+    parser.add_argument("--staging", action="store_true", help="Build beside the live EXE as CairnDesktop-0.7.0-update.exe")
     main(staging=parser.parse_args().staging)

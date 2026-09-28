@@ -46,7 +46,7 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 desktop\build_windows.bat
 ```
 
-批处理脚本会在 `desktop\build\.venv` 创建独立的 Python 构建环境，并在缺少构建依赖时安装 PyInstaller、pywebview 6.2.1、PyYAML 和测试所需库。产物是 `desktop\dist_windows\CairnDesktop.exe`。当前主窗口打开时，可以用 `python desktop/build.py --staging` 将新版另存为同目录的 `CairnDesktop-0.7.0.exe`；关闭旧窗口后运行该文件即可使用新版。Windows EXE 须在 Windows 上构建。构建脚本生成运行包后，也可以用 `python desktop/web_main.py` 直接调试新界面。`gui.py` 和原生 Canvas 图保留为旧实现，不是当前 EXE 的入口。
+批处理脚本会在 `desktop\build\.venv` 创建独立的 Python 构建环境，并在缺少构建依赖时安装 PyInstaller、pywebview 6.2.1、PyYAML 和测试所需库。产物是 `desktop\dist_windows\CairnDesktop.exe`。当前主窗口打开时，可以用 `python desktop/build.py --staging` 将新版另存为同目录的 `CairnDesktop-0.7.0-update.exe`；关闭旧窗口后运行该文件即可使用新版。Windows EXE 须在 Windows 上构建。构建脚本生成运行包后，也可以用 `python desktop/web_main.py` 直接调试新界面。`gui.py` 和原生 Canvas 图保留为旧实现，不是当前 EXE 的入口。
 
 运行包保留原项目 `LICENSE`，构建时收集第三方依赖声明至 `app/licenses/THIRD_PARTY_NOTICES.txt`，并在可用时保留 Python 许可证。原图脚本仍使用仓库自带的资源，不依赖在线 CDN。
 
