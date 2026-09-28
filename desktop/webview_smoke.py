@@ -1,0 +1,141 @@
+"""Test the actual WebView2 desktop UI with a fixture or existing offline history."""
+
+import argparse
+import os
+import shutil
+import sqlite3
+import subprocess
+import sys
+import time
+import traceback
+from pathlib import Path
+from unittest.mock import patch
+
+from PIL import Image
+
+from test_graph_data import GraphDataTests
+from web_main import main as run_desktop
+
+OUTPUT = Path(__file__).resolve().parent / "design" / "cairn-desktop-implemented.png"
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--storage", type=Path)
+    parser.add_argument("--fixture", action="store_true")
+    args = parser.parse_args()
+    fixture = None
+    if args.storage:
+        storage = args.storage.resolve()
+    else:
+        fixture = GraphDataTests()
+        fixture.setUp()
+        storage = fixture.root
+        (storage / "data" / "cairn").mkdir(parents=True)
+        shutil.copyfile(fixture.db, storage / "data" / "cairn" / "cairn.db")
+        with sqlite3.connect(storage / "data" / "cairn" / "cairn.db") as conn:
+            conn.execute("UPDATE intents SET created_at='2026-01-01T00:00:01Z', concluded_at='2026-01-01T00:00:02Z'")
+        conn.close()
+        stage = storage / "output" / "p1" / "workspace" / ".cairn" / "runs" / "explore-1"
+        stage.mkdir(parents=True)
+        (stage / "task.json").write_text('{"intent_id":"i2","phase":"explore","worker":"fixture","duration_ms":1250}', encoding="utf-8")
+        (stage / "stdout.log").write_text("synthetic process output", encoding="utf-8")
+        try:
+            # Own the test directory outside the UI process: WebView2 releases
+            # its browser profile when that process exits.
+            result = subprocess.run([sys.executable, __file__, "--storage", str(storage), "--fixture"], timeout=60)
+            if result.returncode:
+                raise RuntimeError(f"WebView fixture process exited with {result.returncode}")
+        finally:
+            fixture.tearDown()
+        return
+    failures = []
+
+    def interact(window, host):
+        def js(script):
+            return window.evaluate_js(script)
+
+        def wait_for(script, timeout=25):
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if js(script):
+                    return
+                time.sleep(0.1)
+            raise AssertionError(f"UI condition timed out: {script}")
+
+        prefix = "document.getElementById('graph').contentWindow.desktopGraphApp"
+        try:
+            wait_for(f"!!document.getElementById('graph')?.contentWindow?.desktopGraphApp")
+            js("show('graph')")
+            projects = host.summaries()
+            assert projects, "No historical projects to display"
+            import json
+            js(f"{prefix}.openProject({json.dumps(projects[0]['id'])}); true")
+            wait_for(f"!!{prefix}.cy && {prefix}.cy.nodes().length > 0")
+            time.sleep(1)
+            assert js(f"{prefix}.layoutMode") == "klay_tb"
+            if args.fixture:
+                assert js(f"{prefix}.cy.nodes().length") == 4  # Completed intents are edges upstream.
+                assert js(f"{prefix}.cy.edges().length") == 4
+                js(f"{prefix}.cy.edges().filter(e=>e.data('intentId')==='i2').first().emit('tap'); true")
+                wait_for(f"{prefix}.selectedNode?.id === 'i2'")
+                js(f"{prefix}.sideTab='records'; {prefix}.loadDesktopRecords(); true")
+                wait_for(f"{prefix}.desktopRecordsLinked && {prefix}.desktopOutput.stdout.includes('synthetic process output')")
+                assert js(f"{prefix}.desktopSelectedRecord().duration_ms") == 1250
+                js(f"{prefix}.selectFact('f2'); true")
+                wait_for(f"{prefix}.desktopRecordsLinked")
+                js(f"{prefix}.sideTab='detail'; {prefix}.layoutMode='elk_lr'; {prefix}.applySelectedLayout(); true")
+                time.sleep(1)
+                js(f"{prefix}.layoutMode='dagre_tb'; {prefix}.applySelectedLayout(); true")
+                time.sleep(1)
+                js(f"{prefix}.startProjectReplay(); true")
+                wait_for(f"{prefix}.replay.active")
+                js(f"{prefix}.exitProjectReplay(); true")
+                wait_for(f"!{prefix}.replay.active && !!{prefix}.cy")
+                time.sleep(1)
+            else:
+                js(f"{prefix}.selectFact('f001'); true")
+                js(f"{prefix}.sideTab='detail'; true")
+            # Polling without new graph elements must preserve the user's viewport.
+            js(f"{prefix}.cy.zoom(1.3); {prefix}.cy.pan(document.getElementById('graph').contentWindow.JSON.parse('{{\"x\":45,\"y\":35}}')); {prefix}.updateGraph(); true")
+            assert abs(js(f"{prefix}.cy.zoom()") - 1.3) < 0.01
+            pan_x = js(f"{prefix}.cy.pan().x")
+            assert abs(pan_x - 45) < 0.01, f"Viewport changed to {pan_x}"
+            js(f"{prefix}.layoutMode='klay_tb'; {prefix}.applySelectedLayout(); true")
+            time.sleep(1.3)
+            # Capture only this application's WebView, independent of which
+            # other application has foreground focus on the user's desktop.
+            from System import Action
+            from System.IO import FileStream, FileMode
+            from Microsoft.Web.WebView2.Core import CoreWebView2CapturePreviewImageFormat
+            stream = FileStream(str(OUTPUT), FileMode.Create)
+            tasks = []
+            def capture():
+                tasks.append(window.native.webview.CoreWebView2.CapturePreviewAsync(
+                    CoreWebView2CapturePreviewImageFormat.Png, stream))
+            window.native.Invoke(Action(capture))
+            try:
+                assert tasks[0].Wait(10000), "WebView capture timed out"
+            finally:
+                stream.Dispose()
+            with Image.open(OUTPUT) as image:
+                assert image.width > 500 and image.height > 300
+            print("WebView2 smoke passed: upstream graph, layouts, replay, node logs, preserved viewport")
+            print(OUTPUT)
+        except Exception:
+            failures.append(traceback.format_exc())
+        finally:
+            window.destroy()
+
+    try:
+        with patch.dict(os.environ, {"CAIRN_DESKTOP_STORAGE_ROOT": str(storage)}):
+            run_desktop(test_callback=interact)
+    finally:
+        if fixture:
+            fixture.tearDown()
+    if failures:
+        raise AssertionError(failures[0])
+
+
+if __name__ == "__main__":
+    main()

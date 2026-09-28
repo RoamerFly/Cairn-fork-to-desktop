@@ -19,9 +19,9 @@ if not exist "%VENV_PY%" (
     if errorlevel 1 goto :failed
 )
 
-"%VENV_PY%" -c "import PyInstaller, customtkinter, PIL" >nul 2>&1
+"%VENV_PY%" -c "import PyInstaller, customtkinter, PIL, webview, yaml, importlib.metadata; assert importlib.metadata.version('pywebview') == '6.2.1'" >nul 2>&1
 if errorlevel 1 (
-    "%VENV_PY%" -m pip install pyinstaller customtkinter pillow
+    "%VENV_PY%" -m pip install pyinstaller customtkinter pillow pywebview==6.2.1 pyyaml
     if errorlevel 1 goto :failed
 )
 

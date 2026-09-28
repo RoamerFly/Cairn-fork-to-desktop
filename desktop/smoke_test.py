@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import ctypes
 import os
 import subprocess
 import tempfile
@@ -86,6 +87,22 @@ def main() -> None:
             else:
                 raise RuntimeError("EXE did not extract its runtime")
             time.sleep(1)
+            # Require the actual WebView host window, not merely successful
+            # payload extraction or a startup-error message box.
+            user32 = ctypes.WinDLL("user32")
+            user32.FindWindowW.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p)
+            user32.FindWindowW.restype = ctypes.c_void_p
+            user32.GetClassNameW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int)
+            for _ in range(80):
+                window = user32.FindWindowW(None, launcher.APP_TITLE)
+                classname = ctypes.create_unicode_buffer(256)
+                if window:
+                    user32.GetClassNameW(window, classname, 256)
+                    if classname.value.startswith("WindowsForms"):
+                        break
+                time.sleep(0.25)
+            else:
+                raise RuntimeError("EXE WebView2 window did not start")
             duplicate = subprocess.run(
                 [str(EXE)], env=environment, timeout=15, capture_output=True
             )
