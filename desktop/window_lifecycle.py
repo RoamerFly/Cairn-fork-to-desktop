@@ -130,4 +130,3 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
     window.events.closed += on_closed
     host.minimize_to_tray = minimize_to_tray
     host.exit_application = exit_application
-
