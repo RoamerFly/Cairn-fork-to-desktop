@@ -165,8 +165,8 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
             exit_application()
         return False
 
-    def on_closing(_window):
-        if exiting.is_set():
+    def on_closing(_window=None):
+        if exiting.is_set() or getattr(host, "test_force_close", False):
             return True
         return handle_close_request()
 
@@ -201,7 +201,7 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
         tray_ref[0] = tray
         tray_icon_ref[0] = icon
 
-    def on_shown(_window):
+    def on_shown(_window=None):
         on_ui(initialize_tray)
 
     window.events.shown += on_shown

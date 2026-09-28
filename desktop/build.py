@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 import sys
 import importlib.metadata
-import argparse
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -61,7 +60,7 @@ def build_payload() -> Path:
     return ZIP_PATH
 
 
-def main(staging: bool = False) -> None:
+def main() -> None:
     if sys.platform != "win32":
         raise SystemExit("Build the Windows EXE on Windows.")
     payload = build_payload()
@@ -75,7 +74,7 @@ def main(staging: bool = False) -> None:
             "--onefile",
             "--windowed",
             "--name",
-            "CairnDesktop-0.7.0-update" if staging else "CairnDesktop",
+            "CairnDesktop",
             "--icon",
             str(DESKTOP / "assets" / "cairn.ico"),
             "--distpath",
@@ -97,10 +96,14 @@ def main(staging: bool = False) -> None:
         cwd=ROOT,
         check=True,
     )
-    print(DIST_PATH / ("CairnDesktop-0.7.0-update.exe" if staging else "CairnDesktop.exe"))
+    for old_update in DIST_PATH.glob("CairnDesktop-*-update.exe"):
+        if old_update.is_file() and old_update.parent.resolve() == DIST_PATH.resolve():
+            try:
+                old_update.unlink()
+            except PermissionError:
+                raise SystemExit(f"Close the running old version, then remove {old_update.name} and rebuild.")
+    print(DIST_PATH / "CairnDesktop.exe")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--staging", action="store_true", help="Build beside the live EXE as CairnDesktop-0.7.0-update.exe")
-    main(staging=parser.parse_args().staging)
+    main()

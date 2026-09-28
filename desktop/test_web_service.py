@@ -51,13 +51,13 @@ class DesktopServiceTests(unittest.TestCase):
     def test_start_reuses_image_and_only_pulls_if_missing(self):
         body = {"api_key": "sk-fixture-secret", "model": "deepseek-flash"}
         with patch("web_service.docker_available", return_value=(True, "ready")), \
-             patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 0)), \
+             patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout="")), \
              patch.object(self.service, "command") as command:
             self.service.start(body)
             self.assertEqual(command.call_count, 1)
             self.assertIn("up", command.call_args.args[0])
         with patch("web_service.docker_available", return_value=(True, "ready")), \
-             patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 1)), \
+             patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 1, stdout="")), \
              patch.object(self.service, "command") as command:
             self.service.start(body)
             self.assertEqual(command.call_count, 2)

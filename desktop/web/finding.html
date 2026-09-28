@@ -1,0 +1,39 @@
+<div class="space-y-3">
+  <template x-if="selectedFactId() === 'origin' || selectedFactId() === 'goal'">
+    <p class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words" x-text="selectedFactRecord().description"></p>
+  </template>
+  <template x-if="selectedFactId() !== 'origin' && selectedFactId() !== 'goal'">
+    <div class="space-y-3">
+      <section class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold text-indigo-800">漏洞结果</h3>
+          <button type="button" @click="generateDesktopFinding()" :disabled="desktopFindingBusy"
+            class="px-2.5 py-1 rounded-lg border border-indigo-200 bg-white text-xs text-indigo-700 disabled:opacity-50"
+            x-text="desktopFindingBusy ? '正在整理…' : desktopFinding.available ? '重新整理' : '整理结果'"></button>
+        </div>
+        <p class="text-xs text-slate-500">按需使用已保存的模型配置整理当前事实；保留原始记录，模型整理会消耗 Token。</p>
+        <p x-show="desktopFindingError" class="text-xs text-rose-600 break-words" x-text="desktopFindingError"></p>
+        <p x-show="!desktopFinding.available && !desktopFindingBusy && !desktopFindingError" class="text-xs text-slate-500">尚未整理。点击“整理结果”查看结构化发现。</p>
+        <p x-show="desktopFinding.available && !desktopFinding.findings.length" class="text-xs text-slate-500">现有事实中没有足够依据确认漏洞。可查看下方原始记录。</p>
+      </section>
+      <template x-for="(finding, index) in desktopFinding.findings" :key="index">
+        <div class="space-y-3">
+          <section class="rounded-xl border border-slate-200 bg-white p-3 space-y-3">
+            <div class="flex items-start justify-between gap-2"><h3 class="text-sm font-semibold text-slate-800" x-text="finding.title || `发现 ${index + 1}`"></h3><span class="text-[11px] text-indigo-600" x-text="finding.category"></span></div>
+            <div x-show="finding.location" class="text-xs break-all"><span class="text-slate-400">位置　</span><span class="text-slate-700" x-text="finding.location"></span></div>
+            <div x-show="finding.summary" class="text-xs leading-relaxed whitespace-pre-wrap break-words"><span class="font-semibold text-slate-500">发现描述</span><p class="mt-1 text-slate-700" x-text="finding.summary"></p></div>
+            <div x-show="finding.impact" class="text-xs leading-relaxed whitespace-pre-wrap break-words"><span class="font-semibold text-slate-500">影响</span><p class="mt-1 text-slate-700" x-text="finding.impact"></p></div>
+            <div x-show="finding.evidence.length" class="text-xs"><span class="font-semibold text-slate-500">证据</span><ol class="mt-1 space-y-1 list-disc pl-4 text-slate-700"><template x-for="(item, itemIndex) in finding.evidence" :key="itemIndex"><li class="whitespace-pre-wrap break-all" x-text="item"></li></template></ol></div>
+            <div x-show="finding.limitations" class="text-xs leading-relaxed whitespace-pre-wrap break-words"><span class="font-semibold text-slate-500">边界与待确认项</span><p class="mt-1 text-slate-700" x-text="finding.limitations"></p></div>
+          </section>
+          <section class="rounded-xl border border-teal-100 bg-teal-50/60 p-3 space-y-2">
+            <h3 class="text-sm font-semibold text-teal-800">复现</h3>
+            <p x-show="!finding.reproduction.length" class="text-xs text-slate-500">现有记录不足以给出可靠复现步骤。请查看原始事实和执行记录。</p>
+            <ol class="space-y-2"><template x-for="(step, stepIndex) in finding.reproduction" :key="stepIndex"><li class="flex gap-2 text-xs"><span class="shrink-0 font-semibold text-teal-700" x-text="stepIndex + 1 + '.'"></span><div class="space-y-1 min-w-0"><p class="text-slate-700 whitespace-pre-wrap break-all" x-text="step.action"></p><p x-show="step.expected" class="text-slate-500 whitespace-pre-wrap break-all"><span>预期观察：</span><span x-text="step.expected"></span></p></div></li></template></ol>
+          </section>
+        </div>
+      </template>
+      <details class="rounded-xl border border-slate-200 bg-white p-3"><summary class="cursor-pointer text-xs font-medium text-slate-600">原始事实（完整记录）</summary><p class="mt-3 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap break-words" x-text="selectedFactRecord().description"></p></details>
+    </div>
+  </template>
+</div>

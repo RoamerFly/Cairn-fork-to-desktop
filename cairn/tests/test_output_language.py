@@ -9,15 +9,11 @@ from cairn.dispatcher.config import RuntimeConfig
 @pytest.mark.parametrize("name", ["bootstrap.md", "bootstrap_conclude.md", "reason.md", "explore.md", "explore_conclude.md"])
 def test_language_requirement_covers_every_agent_phase(name):
     original = resources.files("cairn.dispatcher.prompts").joinpath("default", name).read_text(encoding="utf-8")
-    automatic = load_prompt("default", name)
-    assert automatic.startswith(original)
-    assert "Fact readability and evidence quality" in automatic
-    assert "one concise, self-contained paragraph of 1–3 short sentences" in automatic
+    assert load_prompt("default", name) == original
     chinese = load_prompt("default", name, "zh-CN")
     assert chinese.startswith(original)
     assert "Simplified Chinese (简体中文)" in chinese
     assert "Keep JSON field names, identifiers, commands, paths and verbatim evidence unchanged" in chinese
-    assert "Fact readability and evidence quality" in chinese
     assert "English" in load_prompt("default", name, "en")
 
 

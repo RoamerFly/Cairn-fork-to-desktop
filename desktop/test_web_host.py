@@ -49,6 +49,8 @@ class WebHostTests(unittest.TestCase):
         self.assertIn('id="settings-tab"', shell)
         self.assertTrue(self.get("/desktop-icons/cairn.ico").startswith(b'\x00\x00\x01\x00'))
         self.assertIn("执行记录", graph)
+        self.assertIn("漏洞结果", graph)
+        self.assertIn("现有记录不足以给出可靠复现步骤", graph)
         self.assertIn("cytoscape", graph)
         self.assertIn("startProjectReplay", graph)
         self.assertIn("upstreamCairnApp", self.get("/desktop-assets/graph.js").decode())
@@ -99,6 +101,14 @@ class WebHostTests(unittest.TestCase):
         self.assertEqual(preferences["layout_mode"], "elk_lr")
         self.assertEqual(preferences["sidePanelWidth"], 450)
         self.assertTrue((self.fixture.root / "data" / "ui.json").is_file())
+
+    def test_finding_cache_is_read_only_and_generation_requires_token(self):
+        path = "/desktop/projects/p1/findings/f1"
+        self.assertFalse(json.loads(self.get(path))["available"])
+        request = urllib.request.Request(self.host.url + path, method="POST", data=b"")
+        with self.assertRaises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(request)
+        self.assertEqual(denied.exception.code, 403)
 
 
 if __name__ == "__main__":

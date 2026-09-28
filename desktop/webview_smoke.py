@@ -14,6 +14,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from test_graph_data import GraphDataTests
+from findings import _source_hash
 from web_main import main as run_desktop
 
 OUTPUT = Path(__file__).resolve().parent / "design" / "cairn-desktop-implemented.png"
@@ -36,7 +37,18 @@ def main():
         shutil.copyfile(fixture.db, storage / "data" / "cairn" / "cairn.db")
         with sqlite3.connect(storage / "data" / "cairn" / "cairn.db") as conn:
             conn.execute("UPDATE intents SET created_at='2026-01-01T00:00:01Z', concluded_at='2026-01-01T00:00:02Z'")
+            conn.execute("UPDATE facts SET description='未经登录请求 GET /example 返回 HTTP 200，响应包含测试资料。' WHERE id='f2'")
         conn.close()
+        import json
+        report = storage / "output" / "p1" / "workspace" / ".cairn" / "findings" / "f2.json"
+        report.parent.mkdir(parents=True)
+        report.write_text(json.dumps({"fact_id": "f2", "source_hash": _source_hash(
+            {"description": "未经登录请求 GET /example 返回 HTTP 200，响应包含测试资料。"}, {"description": "action"}),
+            "findings": [{"title": "未授权读取测试资料", "category": "访问控制", "location": "GET /example",
+                          "summary": "未经登录即可取得测试资料。", "impact": "测试资料可被未授权访问。",
+                          "evidence": ["未经登录请求返回 HTTP 200，响应包含测试资料。"],
+                          "reproduction": [{"action": "在未登录状态请求 GET /example", "expected": "HTTP 200，响应包含测试资料"}],
+                          "limitations": "仅有这一次请求的记录。"}]}, ensure_ascii=False), encoding="utf-8")
         stage = storage / "output" / "p1" / "workspace" / ".cairn" / "runs" / "explore-1"
         stage.mkdir(parents=True)
         (stage / "task.json").write_text('{"intent_id":"i2","phase":"explore","worker":"fixture","duration_ms":1250}', encoding="utf-8")
@@ -73,6 +85,7 @@ def main():
                 wait_for("!document.getElementById('settings').classList.contains('hidden')")
                 js("document.getElementById('key').value='sk-fixture-secret'; document.getElementById('output-language').value='en'; action('save'); true")
                 wait_for("document.getElementById('current-language').textContent === 'English'")
+                wait_for("!jobPending")
                 assert host.service.output_language == 'en'
                 assert 'sk-fixture-secret' not in js("document.getElementById('logs').textContent")
                 js("document.getElementById('output-language').value='zh-CN'; action('save'); true")
@@ -103,6 +116,9 @@ def main():
                 js(f"{prefix}.selectFact('f2'); true")
                 wait_for(f"{prefix}.desktopRecordsLinked")
                 js(f"{prefix}.sideTab='detail'; {prefix}.layoutMode='elk_lr'; {prefix}.applySelectedLayout(); true")
+                wait_for(f"{prefix}.desktopFinding?.available")
+                assert js("document.getElementById('graph').contentDocument.body.innerText.includes('未授权读取测试资料')")
+                assert js("document.getElementById('graph').contentDocument.body.innerText.includes('复现')")
                 time.sleep(1)
                 js(f"{prefix}.layoutMode='dagre_tb'; {prefix}.applySelectedLayout(); true")
                 time.sleep(1)
@@ -110,6 +126,7 @@ def main():
                 wait_for(f"{prefix}.replay.active")
                 js(f"{prefix}.exitProjectReplay(); true")
                 wait_for(f"!{prefix}.replay.active && !!{prefix}.cy")
+                js(f"{prefix}.selectFact('f2'); {prefix}.sideTab='detail'; true")
                 time.sleep(1)
             else:
                 js(f"{prefix}.selectFact('f001'); true")
@@ -153,6 +170,7 @@ def main():
         except Exception:
             failures.append(traceback.format_exc())
         finally:
+            host.test_force_close = True
             window.destroy()
 
     try:

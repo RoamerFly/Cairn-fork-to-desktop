@@ -15,8 +15,9 @@ window.cairnApp = function () {
   Object.assign(app, {
     desktopRecords: [], desktopRecordId: '', desktopRecordsLinked: false,
     desktopTokenUsage: {project: null, intent: null},
+    desktopFinding: {available: false, findings: []}, desktopFindingBusy: false, desktopFindingError: '',
     desktopOutput: {stdout: '', stderr: ''}, desktopRecordTab: '执行输出',
-    _desktopLoadSequence: 0, _desktopOutputSequence: 0,
+    _desktopLoadSequence: 0, _desktopOutputSequence: 0, _desktopFindingSequence: 0,
     summarizeFactLabel(fact) {
       return fact.id === 'origin' ? '起点' : fact.id === 'goal' ? '目标' : factLabel.call(this, fact);
     },
@@ -32,8 +33,8 @@ window.cairnApp = function () {
       } catch(e) { console.warn('读取界面偏好失败', e); }
       await init.call(this);
       window.desktopGraphApp = this;
-      this.$watch('selectedNode', () => this.loadDesktopRecords());
-      this.$watch('selectedProjectId', () => this.loadDesktopRecords());
+      this.$watch('selectedNode', () => { this.loadDesktopRecords(); this.loadDesktopFinding(); });
+      this.$watch('selectedProjectId', () => { this.loadDesktopRecords(); this.loadDesktopFinding(); });
       // The shell initially hides its iframe; resize after switching tabs.
       window.addEventListener('resize', () => { if (this.cy) this.cy.resize(); });
     },
@@ -85,6 +86,45 @@ window.cairnApp = function () {
         if (!this.desktopRecords.some(r => r.record_id === this.desktopRecordId)) this.desktopRecordId = this.desktopRecords[0]?.record_id || '';
         await this.loadDesktopRecord();
       } catch (e) { if (sequence === this._desktopLoadSequence) this.desktopOutput = {stdout:e.message,stderr:''}; }
+    },
+    desktopFindingPath() {
+      if (!this.selectedProjectId || this.selectedNode?.type !== 'fact') return '';
+      const factId = this.selectedFactId();
+      if (!factId || factId === 'origin' || factId === 'goal') return '';
+      return `/desktop/projects/${encodeURIComponent(this.selectedProjectId)}/findings/${encodeURIComponent(factId)}`;
+    },
+    async loadDesktopFinding() {
+      const sequence = ++this._desktopFindingSequence;
+      const path = this.desktopFindingPath();
+      this.desktopFinding = {available:false, findings:[]};
+      this.desktopFindingError = '';
+      if (!path) return;
+      try {
+        const response = await fetch(path);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || '读取漏洞结果失败');
+        if (sequence === this._desktopFindingSequence) this.desktopFinding = data;
+      } catch (error) {
+        if (sequence === this._desktopFindingSequence) this.desktopFindingError = error.message;
+      }
+    },
+    async generateDesktopFinding() {
+      const path = this.desktopFindingPath();
+      if (!path || this.desktopFindingBusy) return;
+      const sequence = ++this._desktopFindingSequence;
+      this.desktopFindingBusy = true;
+      this.desktopFindingError = '';
+      try {
+        const response = await fetch(path, {method:'POST', headers:{'X-Cairn-Token':window.DESKTOP_TOKEN}});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || '整理漏洞结果失败');
+        if (sequence === this._desktopFindingSequence) {
+          this.desktopFinding = data;
+          this.loadDesktopRecords();
+        }
+      } catch (error) {
+        if (sequence === this._desktopFindingSequence) this.desktopFindingError = error.message;
+      } finally { this.desktopFindingBusy = false; }
     },
     desktopSelectedRecord() { return this.desktopRecords.find(r => r.record_id === this.desktopRecordId) || null; },
     formatTokenUsage(usage) {

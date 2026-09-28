@@ -22,6 +22,8 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 
 点击事实节点或行动连线，右侧“详情”保留原项目的完整说明和来源信息；新增“执行记录”页，可查看任务参数、标准输出、错误日志、阶段耗时，并打开归档目录。新的 Bootstrap/Explore 阶段通过 `intent_id` 对应到行动；新事实关联其来源行动。Reason 和旧版无节点编号的记录保留为项目级阶段，并在 UI 明确标注。过程信息来自任务元数据与公开执行输出，不包含模型不可见的内部思考。任务说明、工具输出和记录内容不会被自动翻译。
 
+普通事实节点的“详情”可按需点击“整理结果”，用设置中的 DeepSeek 模型把已有事实拆分为结构化的漏洞结果、证据和独立“复现”卡片。整理只读取该事实和来源行动的文字，不会向靶站发送请求；记录不足时复现步骤留空，原始事实可展开核对。结果保存在 `output/<项目 ID>/workspace/.cairn/findings/<事实 ID>.json`，事实内容变更后自动标记为过期。每次重新整理会消耗模型 Token，模型返回的用量另存为 `workspace/.cairn/runs/finding-format-*/task.json`，计入任务累计。
+
 图、快照和归档以只读方式读取 EXE 同级的 SQLite 数据库和阶段文件，每 5 秒刷新，不要求 Docker 或 Server 运行。创建、停止、提示等操作转发到正在运行的 Cairn API；服务未启动时给出错误，不会伪造操作成功。桌面写操作需会话令牌，且拒绝非本机 Host。阶段日志在结束后归档；运行中的 Codex 会话文件持续写入 `output/<项目 ID>/codex`。长日志在 UI 中显示前 200,000 字符，可打开文件查看全文。数据库里的起点和目标自项目创建就存在，目标节点存在不代表任务已经完成。
 
 本机模式的成本与推荐方案见 [本机执行改造方案](LOCAL_MODE_PLAN.md)。0.5.0 调整的是桌面 UI，执行端仍为 Docker。
@@ -46,7 +48,7 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 desktop\build_windows.bat
 ```
 
-批处理脚本会在 `desktop\build\.venv` 创建独立的 Python 构建环境，并在缺少构建依赖时安装 PyInstaller、pywebview 6.2.1、PyYAML 和测试所需库。产物是 `desktop\dist_windows\CairnDesktop.exe`。当前主窗口打开时，可以用 `python desktop/build.py --staging` 将新版另存为同目录的 `CairnDesktop-0.7.0-update.exe`；关闭旧窗口后运行该文件即可使用新版。Windows EXE 须在 Windows 上构建。构建脚本生成运行包后，也可以用 `python desktop/web_main.py` 直接调试新界面。`gui.py` 和原生 Canvas 图保留为旧实现，不是当前 EXE 的入口。
+批处理脚本会在 `desktop\build\.venv` 创建独立的 Python 构建环境，并在缺少构建依赖时安装 PyInstaller、pywebview 6.2.1、PyYAML 和测试所需库。唯一产物是 `desktop\dist_windows\CairnDesktop.exe`。构建前请退出正在运行的桌面程序（包括托盘进程），以便覆盖旧 EXE；构建脚本会清理早期版本遗留的 `*-update.exe`。Windows EXE 须在 Windows 上构建。构建脚本生成运行包后，也可以用 `python desktop/web_main.py` 直接调试新界面。`gui.py` 和原生 Canvas 图保留为旧实现，不是当前 EXE 的入口。
 
 运行包保留原项目 `LICENSE`，构建时收集第三方依赖声明至 `app/licenses/THIRD_PARTY_NOTICES.txt`，并在可用时保留 Python 许可证。原图脚本仍使用仓库自带的资源，不依赖在线 CDN。
 

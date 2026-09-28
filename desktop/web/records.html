@@ -6,7 +6,7 @@
   <section class="rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5 space-y-1.5">
     <div class="flex justify-between gap-3 text-xs"><span class="text-slate-500">任务累计 Token</span><span class="text-right font-medium text-indigo-700" x-text="formatTokenUsage(desktopTokenUsage.project)"></span></div>
     <div x-show="desktopRecordsLinked" class="flex justify-between gap-3 text-xs"><span class="text-slate-500">当前行动 Token</span><span class="text-right font-medium text-indigo-700" x-text="formatTokenUsage(desktopTokenUsage.intent)"></span></div>
-    <p class="text-[11px] text-slate-400">来自模型 CLI 返回的用量；不支持报告用量的执行器显示“未提供”。</p>
+    <p class="text-[11px] text-slate-400">来自模型或执行器返回的用量；不支持报告用量的阶段显示“未提供”。</p>
   </section>
   <select x-show="desktopRecords.length" x-model="desktopRecordId" @change="loadDesktopRecord()" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white">
     <template x-for="record in desktopRecords" :key="record.record_id"><option :value="record.record_id" x-text="`${record.phase} · ${record.worker || ''} · ${record.started_at || '历史阶段'}`"></option></template>

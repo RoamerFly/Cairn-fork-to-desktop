@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import yaml
 
 from core import SERVER_URL, data_root, output_root, runtime_root
+from findings import generate_finding, read_finding
 from graph_data import read_projects, read_record_text, read_runs
 from web_service import DesktopService
 
@@ -37,6 +38,7 @@ class DesktopHost:
         self.service = service or DesktopService()
         self.token = secrets.token_urlsafe(32)
         self.static = runtime_root() / "cairn" / "src" / "cairn" / "server" / "static"
+        self.finding_lock = threading.Lock()
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -84,6 +86,8 @@ class DesktopHost:
                         page = page.replace("'Stopping...' : 'Stop Active'", "'正在停止…' : '停止运行中的任务'")
                         page = page.replace('>Log</button>', '>Log</button><button @click="sideTab = \'records\'; loadDesktopRecords()" class="flex-1 px-3 py-2.5 text-xs font-medium transition" :class="sideTab === \'records\' ? \'text-brand-600 border-b-2 border-brand-500\' : \'text-slate-400\'">执行记录</button>')
                         page = page.replace('<!-- Detail -->', (WEB / "records.html").read_text(encoding="utf-8") + '<!-- Detail -->')
+                        raw_fact = '<p class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words" x-text="selectedFactRecord().description"></p>'
+                        page = page.replace(raw_fact, (WEB / "finding.html").read_text(encoding="utf-8"), 1)
                         page = page.replace('</body>', f'<script>window.DESKTOP_TOKEN={json.dumps(owner.token)}</script><script src="/desktop-assets/graph.js"></script></body>')
                         return self.reply(200, page, "text/html; charset=utf-8")
                     if path.startswith(("/static/", "/desktop-assets/", "/desktop-icons/")):
@@ -133,6 +137,19 @@ class DesktopHost:
                         request = json.loads(body)
                         return self.reply(200, owner.service.action(request.pop("action"), request))
                     parts = path.strip("/").split("/")
+                    if len(parts) == 5 and parts[:2] == ["desktop", "projects"] and parts[3] == "findings":
+                        detail = owner.detail(parts[2])
+                        if self.command == "GET":
+                            return self.reply(200, read_finding(parts[2], parts[4], detail))
+                        if self.command == "POST":
+                            if not owner.finding_lock.acquire(blocking=False):
+                                return self.reply(409, {"detail": "正在整理另一条漏洞结果，请稍后重试。"})
+                            try:
+                                result = generate_finding(parts[2], parts[4], detail, owner.service.key, owner.service.model)
+                                return self.reply(200, result)
+                            finally:
+                                owner.finding_lock.release()
+                        return self.reply(405, {"detail": "不支持的方法"})
                     if len(parts) >= 4 and parts[:2] == ["desktop", "projects"] and parts[3] == "runs":
                         all_records = read_runs(output_root(), parts[2])
 
