@@ -6,14 +6,13 @@
 
 ## 构建
 
-在 Windows 上运行：
+在 Windows 上双击 `desktop\build_windows.bat`，或从仓库根目录运行：
 
 ```powershell
-python -m pip install pyinstaller customtkinter pillow
-python desktop/build.py
+desktop\build_windows.bat
 ```
 
-产物是 `dist\CairnDesktop.exe`。Windows EXE 须在 Windows 上构建。构建脚本生成运行包后，也可以用 `python desktop/gui.py` 直接调试界面。
+批处理脚本会在 `desktop\build\.venv` 创建独立的 Python 构建环境，并在缺少构建依赖时安装 PyInstaller、CustomTkinter 和 Pillow。产物是 `desktop\dist_windows\CairnDesktop.exe`。Windows EXE 须在 Windows 上构建。构建脚本生成运行包后，也可以用 `python desktop/gui.py` 直接调试界面。
 
 ## 运行
 

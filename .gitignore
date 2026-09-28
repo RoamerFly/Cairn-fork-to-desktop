@@ -6,4 +6,5 @@ datas/
 dispatch.yaml
 desktop/build/
 dist/
+desktop/dist_windows/
 desktop/design/cairn-desktop-implemented.png

@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "CairnDesktop.exe"
+EXE = ROOT / "desktop" / "dist_windows" / "CairnDesktop.exe"
 LAUNCHER = ROOT / "desktop" / "core.py"
 
 

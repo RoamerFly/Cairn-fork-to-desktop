@@ -11,6 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = Path(__file__).resolve().parent
 ZIP_PATH = DESKTOP / "build" / "cairn-runtime.zip"
+DIST_PATH = DESKTOP / "dist_windows"
 
 
 def package_files() -> list[tuple[Path, str]]:
@@ -54,7 +55,7 @@ def main() -> None:
             "--name",
             "CairnDesktop",
             "--distpath",
-            str(ROOT / "dist"),
+            str(DIST_PATH),
             "--workpath",
             str(DESKTOP / "build" / "pyinstaller"),
             "--specpath",
@@ -66,7 +67,7 @@ def main() -> None:
         cwd=ROOT,
         check=True,
     )
-    print(ROOT / "dist" / "CairnDesktop.exe")
+    print(DIST_PATH / "CairnDesktop.exe")
 
 
 if __name__ == "__main__":
