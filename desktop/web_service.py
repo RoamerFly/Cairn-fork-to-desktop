@@ -100,6 +100,37 @@ class DesktopService:
             except (OSError, subprocess.TimeoutExpired):
                 self.log("无法确认 Compose 服务状态，将由启动流程重新检查。")
 
+    @staticmethod
+    def docker_desktop_path():
+        roots = [os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"),
+                 os.environ.get("LOCALAPPDATA")]
+        candidates = [Path(root) / "Docker" / "Docker" / "Docker Desktop.exe" for root in roots[:2] if root]
+        if roots[2]:
+            candidates.append(Path(roots[2]) / "Programs" / "Docker" / "Docker" / "Docker Desktop.exe")
+        return next((path for path in candidates if path.is_file()), None)
+
+    def ensure_docker(self):
+        self.docker = docker_available()
+        if self.docker[0]:
+            return
+        desktop = self.docker_desktop_path()
+        if desktop is None:
+            raise RuntimeError("未找到 Docker Desktop。请先安装 Docker Desktop，然后重试“构建并启动”。")
+        self.log("正在启动 Docker Desktop，等待 Linux 引擎就绪…")
+        os.startfile(desktop)
+        deadline = time.monotonic() + 240
+        next_log = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            self.docker = docker_available()
+            if self.docker[0]:
+                self.log("Docker Desktop 已就绪。")
+                return
+            if time.monotonic() >= next_log:
+                self.log("仍在等待 Docker Linux 引擎启动…")
+                next_log = time.monotonic() + 15
+            time.sleep(3)
+        raise RuntimeError("Docker Desktop 已打开，但 Linux 引擎在 4 分钟内未就绪。请检查 Docker Desktop 的提示后重试。")
+
     def save(self, body):
         key = body.get("api_key", "").strip() or self.key
         model = body.get("model", self.model)
@@ -136,12 +167,13 @@ class DesktopService:
     def start(self, body):
         if server_available():
             raise RuntimeError("Cairn 服务已运行。请使用“停止服务”后再重新启动。")
+        if not (body.get("api_key", "").strip() or self.key):
+            raise RuntimeError("请先在设置中填写 DeepSeek API Key。")
+        self.save(body)
+        self.ensure_docker()
         self.check()
         if self.compose_running:
-            raise RuntimeError("Cairn Compose 服务仍在运行。请先停止服务，再重新启动。")
-        if not self.docker[0]:
-            raise RuntimeError("请先启动 Docker Desktop 的 Linux 引擎。")
-        self.save(body)
+            self.log("检测到部分 Compose 服务正在运行，正在重新协调并启动完整服务。")
         installed = subprocess.run(["docker", "image", "inspect", WORKER_IMAGE],
                                    capture_output=True, timeout=15, creationflags=CREATE_NO_WINDOW)
         if installed.returncode:
@@ -151,12 +183,24 @@ class DesktopService:
             self.log("复用本机已安装的 Worker 镜像。")
         self.command(self.compose("up", "-d", "--build", "--force-recreate"))
         self.compose_running = True
-        self.log("Cairn 服务已启动。")
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if server_available():
+                self.log("Cairn 服务已启动并通过 API 检查。")
+                return
+            time.sleep(2)
+        raise RuntimeError("Compose 已启动，但 Cairn API 在 60 秒内未就绪。请查看运行日志。")
 
     def stop(self):
         self.check()
         if not self.docker[0]:
-            raise RuntimeError("Docker 引擎不可用。")
+            if not server_available():
+                self.log("Docker 引擎未运行，无需停止服务。")
+                return
+            raise RuntimeError("Docker 引擎不可用，无法确认 Cairn 服务是否已停止。")
+        if not self.compose_running and not server_available():
+            self.log("Cairn 服务已经停止。")
+            return
         if server_available():
             with urllib.request.urlopen(f"{SERVER_URL}/projects", timeout=10) as response:
                 projects = json.load(response)

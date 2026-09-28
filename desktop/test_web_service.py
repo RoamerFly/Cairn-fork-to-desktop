@@ -51,12 +51,14 @@ class DesktopServiceTests(unittest.TestCase):
     def test_start_reuses_image_and_only_pulls_if_missing(self):
         body = {"api_key": "sk-fixture-secret", "model": "deepseek-flash"}
         with patch("web_service.docker_available", return_value=(True, "ready")), \
+             patch("web_service.server_available", side_effect=[False, True]), \
              patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout="")), \
              patch.object(self.service, "command") as command:
             self.service.start(body)
             self.assertEqual(command.call_count, 1)
             self.assertIn("up", command.call_args.args[0])
         with patch("web_service.docker_available", return_value=(True, "ready")), \
+             patch("web_service.server_available", side_effect=[False, True]), \
              patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 1, stdout="")), \
              patch.object(self.service, "command") as command:
             self.service.start(body)
@@ -69,6 +71,22 @@ class DesktopServiceTests(unittest.TestCase):
             self.assertEqual(opened.call_args.args[0], Path(self.temporary.name) / "output" / "proj_001")
             with self.assertRaises(ValueError):
                 self.service.action("open_project", {"project_id": "../../outside"})
+
+    def test_start_launches_installed_docker_desktop_and_waits_for_engine(self):
+        executable = Path(self.temporary.name) / "Docker Desktop.exe"
+        with patch.object(self.service, "docker_desktop_path", return_value=executable), \
+             patch("web_service.docker_available", side_effect=[(False, "未启动"), (True, "已就绪")]), \
+             patch("web_service.os.startfile", create=True) as launched:
+            self.service.ensure_docker()
+        launched.assert_called_once_with(executable)
+        self.assertTrue(self.service.docker[0])
+
+    def test_stop_with_no_engine_and_no_service_is_idempotent(self):
+        with patch("web_service.docker_available", return_value=(False, "未启动")), \
+             patch("web_service.server_available", return_value=False), \
+             patch.object(self.service, "command") as command:
+            self.service.stop()
+        command.assert_not_called()
 
 
 if __name__ == "__main__":

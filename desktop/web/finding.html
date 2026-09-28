@@ -1,6 +1,6 @@
 <div class="space-y-3">
   <template x-if="selectedFactId() === 'origin' || selectedFactId() === 'goal'">
-    <p class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words" x-text="selectedFactRecord().description"></p>
+    <button type="button" @click="openDesktopOriginalFact()" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-brand-700 hover:bg-brand-50">查看原始事实 ↗</button>
   </template>
   <template x-if="selectedFactId() !== 'origin' && selectedFactId() !== 'goal'">
     <div class="space-y-3">
@@ -33,7 +33,7 @@
           </section>
         </div>
       </template>
-      <details class="rounded-xl border border-slate-200 bg-white p-3"><summary class="cursor-pointer text-xs font-medium text-slate-600">原始事实（完整记录）</summary><p class="mt-3 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap break-words" x-text="selectedFactRecord().description"></p></details>
+      <button type="button" @click="openDesktopOriginalFact()" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium text-brand-700 hover:bg-brand-50">查看原始事实（完整记录） ↗</button>
     </div>
   </template>
 </div>

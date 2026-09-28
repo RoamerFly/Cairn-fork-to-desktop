@@ -22,7 +22,7 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 
 点击事实节点或行动连线，右侧“详情”保留原项目的完整说明和来源信息；新增“执行记录”页，可查看任务参数、标准输出、错误日志、阶段耗时，并打开归档目录。新的 Bootstrap/Explore 阶段通过 `intent_id` 对应到行动；新事实关联其来源行动。Reason 和旧版无节点编号的记录保留为项目级阶段，并在 UI 明确标注。过程信息来自任务元数据与公开执行输出，不包含模型不可见的内部思考。任务说明、工具输出和记录内容不会被自动翻译。
 
-普通事实节点的“详情”可按需点击“整理结果”，用设置中的 DeepSeek 模型把已有事实拆分为结构化的漏洞结果、证据和独立“复现”卡片。整理只读取该事实和来源行动的文字，不会向靶站发送请求；记录不足时复现步骤留空，原始事实可展开核对。结果保存在 `output/<项目 ID>/workspace/.cairn/findings/<事实 ID>.json`，事实内容变更后自动标记为过期。每次重新整理会消耗模型 Token，模型返回的用量另存为 `workspace/.cairn/runs/finding-format-*/task.json`，计入任务累计。
+普通事实节点的“详情”可按需点击“整理结果”，用设置中的 DeepSeek 模型把已有事实拆分为结构化的漏洞结果、证据和独立“复现”卡片。整理只读取该事实和来源行动的文字，不会向靶站发送请求；记录不足时复现步骤留空。“查看原始事实”会打开固定尺寸的大弹窗，长内容仅在弹窗正文区域滚动。结果保存在 `output/<项目 ID>/workspace/.cairn/findings/<事实 ID>.json`，事实内容变更后自动标记为过期。每次重新整理会消耗模型 Token，模型返回的用量另存为 `workspace/.cairn/runs/finding-format-*/task.json`，计入任务累计。整理请求关闭 DeepSeek 的默认思考模式，避免推理 Token 用完后正文为空；空内容或截断时自动重试一次并记录已返回的用量。
 
 图、快照和归档以只读方式读取 EXE 同级的 SQLite 数据库和阶段文件，每 5 秒刷新，不要求 Docker 或 Server 运行。创建、停止、提示等操作转发到正在运行的 Cairn API；服务未启动时给出错误，不会伪造操作成功。桌面写操作需会话令牌，且拒绝非本机 Host。阶段日志在结束后归档；运行中的 Codex 会话文件持续写入 `output/<项目 ID>/codex`。长日志在 UI 中显示前 200,000 字符，可打开文件查看全文。数据库里的起点和目标自项目创建就存在，目标节点存在不代表任务已经完成。
 
@@ -32,7 +32,7 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 
 顶部“设置”页集中管理 DeepSeek 密钥、模型、任务输出语言、图布局、人工操作名称、详情面板宽度和本机存储入口。密钥留空时复用已保存配置，不回传到页面；图偏好保存后立即应用。模型与语言保存后需通过“构建并启动”重新启动服务，运行中的任务请先完成或停止。
 
-“运行日志”区域的“复制日志”按钮可将当前日志复制到剪贴板，也支持鼠标选择后按 Ctrl+C。首次关闭窗口会弹出原生确认框，可退出并停止服务、最小化到系统托盘或继续使用；复选框可记住所选行为。设置页可以查看、更改关闭行为，托盘菜单支持恢复和退出。任务图的“执行记录”页按阶段、行动和任务累计显示 Agent CLI 报告的输入、输出与总 Token，并将原始用量写入 EXE 同级任务目录的阶段 `task.json`。如果执行器没有报告用量，则显示“未提供”；历史记录也不会被估算补写。重新启动时会检查 API 与 Compose 服务状态，避免对已运行的服务再次构建启动。
+“运行日志”区域的“复制日志”按钮可将当前日志复制到剪贴板，也支持鼠标选择后按 Ctrl+C。首次关闭窗口会显示与主界面一致的确认弹窗，可退出并停止服务、最小化到系统托盘或继续使用；复选框可记住所选行为。设置页可以查看、更改关闭行为，托盘菜单支持恢复和退出。退出时会显示停止进度；若服务停止失败，可查看错误并选择立即退出。任务图的“执行记录”页按阶段、行动和任务累计显示 Agent CLI 报告的输入、输出与总 Token，并将原始用量写入 EXE 同级任务目录的阶段 `task.json`。如果执行器没有报告用量，则显示“未提供”；历史记录也不会被估算补写。重新启动时会检查 API 与 Compose 服务状态，避免对已运行的服务再次构建启动。
 
 桌面模板默认 `runtime.output_language: zh-CN`。Dispatcher 对初始化、规划、探索和收尾五类提示词追加输出语言要求，事实说明、行动描述、总结及报告使用简体中文；JSON 字段、命令、标识符及原始证据保留原文。可选择 English 或跟随原提示词，核心配置未指定语言时沿用旧行为。历史任务的数据库与报告不会自动改写，第三方工具原始日志也不会强制翻译。
 
@@ -54,12 +54,12 @@ desktop\build_windows.bat
 
 ## 运行
 
-1. 启动 Docker Desktop，并确保使用 Linux 容器。
-2. 运行 `CairnDesktop.exe`，在“设置”页填写 DeepSeek API Key、选择模型与任务输出语言并保存，然后在“控制中心”点击“构建并启动”。
+1. 确保已安装 Docker Desktop，并在“设置”页填写 DeepSeek API Key、选择模型与任务输出语言。
+2. 运行 `CairnDesktop.exe`，在“控制中心”点击“构建并启动”。程序会在需要时打开 Docker Desktop，等待 Linux 引擎就绪，然后准备镜像并启动 Cairn 服务。首次准备镜像可能较慢，进度会显示在运行日志中。
 3. 点击“任务过程图”，在列表中创建任务或选择已有任务。也可打开 `http://127.0.0.1:8000` 使用原 Cairn Web 界面。
 4. 使用“停止服务”停止当前任务和 Cairn 的 Compose 服务。
 
-首次构建需要下载体积较大的 `linux/amd64` Kali Worker 镜像，并构建 Cairn 应用镜像。若靶站运行在 Windows 主机上，请在任务 URL 中使用 `host.docker.internal` 作为主机名；可从容器访问的外部 URL 可以直接填写。桌面程序不会安装或自动启动 Docker Desktop。
+首次构建需要下载体积较大的 `linux/amd64` Kali Worker 镜像，并构建 Cairn 应用镜像。若靶站运行在 Windows 主机上，请在任务 URL 中使用 `host.docker.internal` 作为主机名；可从容器访问的外部 URL 可以直接填写。桌面程序会启动已安装的 Docker Desktop，但不会替用户安装它。
 
 ## 本地检查
 
@@ -67,6 +67,7 @@ desktop\build_windows.bat
 python -m py_compile desktop/core.py desktop/single_instance.py desktop/web_main.py desktop/web_host.py desktop/web_service.py desktop/build.py
 python desktop/smoke_test.py
 python desktop/test_graph_data.py
+python desktop/test_findings.py
 python desktop/test_web_host.py
 python desktop/test_web_service.py
 python desktop/webview_smoke.py

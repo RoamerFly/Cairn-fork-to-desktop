@@ -12,6 +12,11 @@ from graph_data import read_runs
 
 
 class _Response:
+    def __init__(self, content=None, finish_reason="stop", prompt_tokens=31):
+        self.content = content
+        self.finish_reason = finish_reason
+        self.prompt_tokens = prompt_tokens
+
     def __enter__(self):
         return self
 
@@ -19,11 +24,14 @@ class _Response:
         pass
 
     def read(self):
-        return json.dumps({"choices": [{"message": {"content": json.dumps({"findings": [
+        content = self.content if self.content is not None else json.dumps({"findings": [
             {"title": "示例漏洞", "category": "访问控制", "location": "/example", "summary": "请求可读取资源",
              "impact": "读取资料", "evidence": ["HTTP 200"],
              "reproduction": [{"action": "请求 /example", "expected": "HTTP 200"}], "limitations": "仅限测试环境"}
-        ]}, ensure_ascii=False)}}], "usage": {"prompt_tokens": 31, "completion_tokens": 17, "total_tokens": 48}}).encode()
+        ]}, ensure_ascii=False)
+        return json.dumps({"choices": [{"message": {"content": content}, "finish_reason": self.finish_reason}],
+                           "usage": {"prompt_tokens": self.prompt_tokens, "completion_tokens": 17,
+                                     "total_tokens": self.prompt_tokens + 17}}).encode()
 
 
 class FindingTests(unittest.TestCase):
@@ -37,10 +45,20 @@ class FindingTests(unittest.TestCase):
             self.assertEqual(read_finding("p1", "f1", detail)["findings"], result["findings"])
             self.assertEqual(read_runs(Path(folder) / "output", "p1")[0]["token_usage"]["total_tokens"], 48)
             sent = json.loads(request.call_args.args[0].data)
+            self.assertEqual(sent["thinking"], {"type": "disabled"})
             self.assertIn("GET /example returned HTTP 200", sent["messages"][1]["content"])
             self.assertNotIn("test-key", (Path(folder) / "output" / "p1" / "workspace" / ".cairn" / "findings" / "f1.json").read_text(encoding="utf-8"))
             detail["facts"][0]["description"] = "changed"
             self.assertTrue(read_finding("p1", "f1", detail)["stale"])
+
+    def test_empty_or_truncated_response_retries_and_counts_both_calls(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"CAIRN_DESKTOP_STORAGE_ROOT": folder}):
+            detail = {"facts": [{"id": "f1", "description": "GET /example returned HTTP 200"}], "intents": []}
+            with patch("findings.urllib.request.urlopen", side_effect=[_Response("", "length", 100), _Response()] ) as request:
+                result = generate_finding("p1", "f1", detail, "test-key", "deepseek-flash")
+            self.assertTrue(result["available"])
+            self.assertEqual(request.call_count, 2)
+            self.assertEqual(read_runs(Path(folder) / "output", "p1")[0]["token_usage"]["total_tokens"], 165)
 
     def test_invalid_ids_and_origin_do_not_call_model(self):
         detail = {"facts": [{"id": "origin", "description": "start"}], "intents": []}

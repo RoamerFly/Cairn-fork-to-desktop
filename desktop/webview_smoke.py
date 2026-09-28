@@ -19,6 +19,8 @@ from web_main import main as run_desktop
 
 OUTPUT = Path(__file__).resolve().parent / "design" / "cairn-desktop-implemented.png"
 SETTINGS_OUTPUT = OUTPUT.with_name("cairn-settings-implemented.png")
+CLOSE_OUTPUT = OUTPUT.with_name("cairn-close-implemented.png")
+FACT_OUTPUT = OUTPUT.with_name("cairn-original-fact-implemented.png")
 
 
 def main():
@@ -101,7 +103,9 @@ def main():
             projects = host.summaries()
             assert projects, "No historical projects to display"
             import json
-            js(f"{prefix}.openProject({json.dumps(projects[0]['id'])}); true")
+            project = (next((item for item in projects if any(fact['id'] == 'f001' for fact in host.detail(item['id'])['facts'])), projects[0])
+                       if not args.fixture else projects[0])
+            js(f"{prefix}.openProject({json.dumps(project['id'])}); true")
             wait_for(f"!!{prefix}.cy && {prefix}.cy.nodes().length > 0")
             time.sleep(1)
             assert js(f"{prefix}.layoutMode") == "klay_tb"
@@ -119,6 +123,12 @@ def main():
                 wait_for(f"{prefix}.desktopFinding?.available")
                 assert js("document.getElementById('graph').contentDocument.body.innerText.includes('未授权读取测试资料')")
                 assert js("document.getElementById('graph').contentDocument.body.innerText.includes('复现')")
+                js(f"{prefix}.openDesktopOriginalFact(); true")
+                wait_for(f"{prefix}.desktopOriginalFactOpen")
+                assert js("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"原始事实\"]')?.offsetHeight > 300")
+                js(f"{prefix}.desktopOriginalFactText = '长记录 '.repeat(3000); true")
+                assert js("(() => {const p=document.getElementById('graph').contentDocument.querySelector('[aria-label=\"原始事实\"]'); return p.querySelector('.overflow-y-auto').scrollHeight > p.querySelector('.overflow-y-auto').clientHeight})()")
+                js(f"{prefix}.desktopOriginalFactOpen=false; true")
                 time.sleep(1)
                 js(f"{prefix}.layoutMode='dagre_tb'; {prefix}.applySelectedLayout(); true")
                 time.sleep(1)
@@ -155,6 +165,17 @@ def main():
                 stream.Dispose()
             with Image.open(OUTPUT) as image:
                 assert image.width > 500 and image.height > 300
+            if not args.fixture:
+                js(f"{prefix}.openDesktopOriginalFact(); true")
+                wait_for(f"{prefix}.desktopOriginalFactOpen")
+                stream = FileStream(str(FACT_OUTPUT), FileMode.Create)
+                tasks.clear()
+                window.native.Invoke(Action(capture))
+                try:
+                    assert tasks[0].Wait(10000), "Original fact capture timed out"
+                finally:
+                    stream.Dispose()
+                js(f"{prefix}.desktopOriginalFactOpen=false; true")
             js("show('settings'); true")
             time.sleep(0.5)
             stream = FileStream(str(SETTINGS_OUTPUT), FileMode.Create)
@@ -166,12 +187,47 @@ def main():
                 stream.Dispose()
             print("WebView2 smoke passed: upstream graph, layouts, replay, node logs, preserved viewport")
             print("Settings smoke passed: language/key persistence, live graph preferences, icon")
+            if args.fixture:
+                window.native.BeginInvoke(Action(lambda: window.native.Close()))
+                wait_for("!document.getElementById('shutdown-overlay').classList.contains('hidden')")
+                stream = FileStream(str(CLOSE_OUTPUT), FileMode.Create)
+                tasks.clear()
+                window.native.Invoke(Action(capture))
+                try:
+                    assert tasks[0].Wait(10000), "Close dialog capture timed out"
+                finally:
+                    stream.Dispose()
+                js("hideCloseDialog(); true")
+                wait_for("document.getElementById('shutdown-overlay').classList.contains('hidden')")
+                js("document.getElementById('close-behavior').value='tray'; saveCloseBehavior(); true")
+                wait_for("document.getElementById('close-choice').textContent.includes('已记住：最小化到系统托盘')")
+                window.native.BeginInvoke(Action(lambda: window.native.Close()))
+                deadline = time.monotonic() + 5
+                while window.native.Visible and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                assert not window.native.Visible, "Remembered tray choice did not hide the window"
+                host.restore_window()
+                deadline = time.monotonic() + 5
+                while not window.native.Visible and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                assert window.native.Visible, "Tray restore failed"
+                js("document.getElementById('close-behavior').value='ask'; saveCloseBehavior(); true")
+                wait_for("document.getElementById('close-choice').textContent.includes('关闭时询问')")
+                window.native.BeginInvoke(Action(lambda: window.native.Close()))
+                wait_for("!document.getElementById('shutdown-overlay').classList.contains('hidden')")
+                js("document.getElementById('shutdown-remember').checked=true; closeWindowAction('exit'); true")
+                assert window.events.closed.wait(20), "Exit choice did not close the desktop window"
+                import json
+                saved = json.loads((storage / 'data' / 'ui.json').read_text(encoding='utf-8'))
+                assert saved['remember_close'] and saved['close_behavior'] == 'exit'
+                print("Window close smoke passed: cancel, remembered tray, remembered exit, no Cairn service")
             print(OUTPUT)
         except Exception:
             failures.append(traceback.format_exc())
         finally:
-            host.test_force_close = True
-            window.destroy()
+            if not window.events.closed.is_set():
+                host.test_force_close = True
+                window.destroy()
 
     try:
         with patch.dict(os.environ, {"CAIRN_DESKTOP_STORAGE_ROOT": str(storage)}):

@@ -16,6 +16,7 @@ window.cairnApp = function () {
     desktopRecords: [], desktopRecordId: '', desktopRecordsLinked: false,
     desktopTokenUsage: {project: null, intent: null},
     desktopFinding: {available: false, findings: []}, desktopFindingBusy: false, desktopFindingError: '',
+    desktopOriginalFactOpen: false, desktopOriginalFactText: '', desktopOriginalFactId: '',
     desktopOutput: {stdout: '', stderr: ''}, desktopRecordTab: '执行输出',
     _desktopLoadSequence: 0, _desktopOutputSequence: 0, _desktopFindingSequence: 0,
     summarizeFactLabel(fact) {
@@ -92,6 +93,13 @@ window.cairnApp = function () {
       const factId = this.selectedFactId();
       if (!factId || factId === 'origin' || factId === 'goal') return '';
       return `/desktop/projects/${encodeURIComponent(this.selectedProjectId)}/findings/${encodeURIComponent(factId)}`;
+    },
+    openDesktopOriginalFact(fact) {
+      const record = fact || this.selectedFactRecord();
+      if (!record) return;
+      this.desktopOriginalFactId = record.id;
+      this.desktopOriginalFactText = record.description || '';
+      this.desktopOriginalFactOpen = true;
     },
     async loadDesktopFinding() {
       const sequence = ++this._desktopFindingSequence;

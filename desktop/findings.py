@@ -101,6 +101,25 @@ def _api_base() -> str:
     return "https://api.deepseek.com"
 
 
+def _record_usage(path: Path, fact_id: str, intent: dict | None, usages: list[dict], started: float,
+                  outcome: str) -> None:
+    if not usages:
+        return
+    keys = {"input_tokens": "prompt_tokens", "output_tokens": "completion_tokens", "total_tokens": "total_tokens"}
+    totals = {target: sum(item.get(source, 0) for item in usages) for target, source in keys.items()}
+    if not all(isinstance(value, int) for value in totals.values()):
+        return
+    run = path.parent.parent / "runs" / f"finding-format-{uuid4().hex[:12]}"
+    run.mkdir(parents=True, exist_ok=True)
+    metadata = {"phase": "finding_format", "worker": "desktop-deepseek", "intent_id": intent.get("id") if intent else None,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "duration_ms": round((time.monotonic() - started) * 1000),
+                "returncode": 0 if outcome == "ok" else 1, "token_usage": totals, "fact_id": fact_id}
+    (run / "task.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    (run / "stdout.log").write_text("漏洞结果整理已保存到 " + str(path) if outcome == "ok" else "", encoding="utf-8")
+    (run / "stderr.log").write_text("" if outcome == "ok" else outcome, encoding="utf-8")
+
+
 def generate_finding(project_id: str, fact_id: str, detail: dict, key: str, model: str) -> dict:
     fact, intent = _fact(detail, fact_id)
     if fact_id in {"origin", "goal"}:
@@ -112,45 +131,55 @@ def generate_finding(project_id: str, fact_id: str, detail: dict, key: str, mode
     request_body = {"model": model, "messages": [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": json.dumps(source, ensure_ascii=False)},
-    ], "response_format": {"type": "json_object"}, "stream": False, "max_tokens": 3000}
-    request = urllib.request.Request(_api_base() + "/chat/completions",
-        data=json.dumps(request_body, ensure_ascii=False).encode("utf-8"), method="POST",
-        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+    ], "thinking": {"type": "disabled"}, "response_format": {"type": "json_object"},
+       "stream": False, "max_tokens": 6000}
     started = time.monotonic()
-    try:
-        with urllib.request.urlopen(request, timeout=90) as response:
-            answer = json.load(response)
-    except urllib.error.HTTPError as exc:
-        raise ValueError(f"模型整理失败：HTTP {exc.code}。请检查设置中的密钥和模型。") from exc
-    except urllib.error.URLError as exc:
-        raise ValueError("无法连接模型接口，请检查网络和接口地址。") from exc
-    try:
-        content = answer["choices"][0]["message"]["content"]
-        findings = _normalize(json.loads(content))
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("模型未返回有效的 JSON 漏洞结果，请重试。") from exc
+    usages = []
+    failure = "模型未返回有效的 JSON 漏洞结果。"
+    findings = None
+    path = _path(project_id, fact_id)
+    for attempt in range(2):
+        if attempt:
+            request_body["messages"][1]["content"] += "\n请直接返回完整 JSON 对象，不要返回空内容。"
+        request = urllib.request.Request(_api_base() + "/chat/completions",
+            data=json.dumps(request_body, ensure_ascii=False).encode("utf-8"), method="POST",
+            headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=90) as response:
+                answer = json.load(response)
+        except urllib.error.HTTPError as exc:
+            _record_usage(path, fact_id, intent, usages, started, "模型接口请求失败")
+            raise ValueError(f"模型整理失败：HTTP {exc.code}。请检查设置中的密钥和模型。") from exc
+        except urllib.error.URLError as exc:
+            _record_usage(path, fact_id, intent, usages, started, "模型接口连接失败")
+            raise ValueError("无法连接模型接口，请检查网络和接口地址。") from exc
+        usage = answer.get("usage")
+        if isinstance(usage, dict):
+            usages.append(usage)
+        try:
+            choice = answer["choices"][0]
+            content = choice["message"]["content"]
+            if choice.get("finish_reason") == "length":
+                failure = "模型输出被截断；请尝试缩短原始事实后重试。"
+                continue
+            if not isinstance(content, str) or not content.strip():
+                failure = "模型返回了空内容。"
+                continue
+            findings = _normalize(json.loads(content))
+            break
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValueError):
+            failure = "模型未返回有效的 JSON 漏洞结果。"
+    if findings is None:
+        _record_usage(path, fact_id, intent, usages, started, failure)
+        raise ValueError(failure + "已自动重试一次，请稍后再试。")
 
     generated_at = datetime.now(timezone.utc).isoformat()
     report = {"fact_id": fact_id, "source_hash": _source_hash(fact, intent),
               "generated_at": generated_at, "findings": findings}
-    path = _path(project_id, fact_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     staged = path.with_suffix(".json.tmp")
     staged.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     staged.replace(path)
 
-    usage = answer.get("usage", {})
-    if isinstance(usage, dict):
-        token_usage = {"input_tokens": usage.get("prompt_tokens", 0),
-                       "output_tokens": usage.get("completion_tokens", 0),
-                       "total_tokens": usage.get("total_tokens", 0)}
-        if all(isinstance(value, int) for value in token_usage.values()):
-            run = path.parent.parent / "runs" / f"finding-format-{uuid4().hex[:12]}"
-            run.mkdir(parents=True, exist_ok=True)
-            metadata = {"phase": "finding_format", "worker": "desktop-deepseek", "intent_id": intent.get("id") if intent else None,
-                        "started_at": generated_at, "duration_ms": round((time.monotonic() - started) * 1000),
-                        "returncode": 0, "token_usage": token_usage, "fact_id": fact_id}
-            (run / "task.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-            (run / "stdout.log").write_text("漏洞结果整理已保存到 " + str(path), encoding="utf-8")
-            (run / "stderr.log").write_text("", encoding="utf-8")
+    _record_usage(path, fact_id, intent, usages, started, "ok")
     return {"available": True, "findings": findings, "generated_at": generated_at}
