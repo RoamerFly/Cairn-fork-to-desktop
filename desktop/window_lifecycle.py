@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
 
 import webview
+from core import data_root
 
 
 def install_window_lifecycle(window, host, icon_path: Path) -> None:
     from System import Action, EventHandler
-    from System.Drawing import Icon
-    from System.Windows.Forms import ContextMenuStrip, NotifyIcon, ToolStripMenuItem
+    from System.Drawing import Icon, Point, Size
+    from System.Windows.Forms import (
+        Button, CheckBox, ContextMenuStrip, DialogResult, Form, FormBorderStyle,
+        FormStartPosition, Label, NotifyIcon, ToolStripMenuItem,
+    )
 
     tray_ref = [None]
     tray_icon_ref = [None]
@@ -80,13 +85,90 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
             on_ui(close)
         threading.Thread(target=shutdown, daemon=True, name="cairn-desktop-shutdown").start()
 
+    def read_close_preferences():
+        path = data_root() / "ui.json"
+        try:
+            preferences = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(preferences, dict):
+                return preferences
+        except (OSError, ValueError):
+            pass
+        return {"remember_close": False, "close_behavior": "ask"}
+
+    def save_close_preference(choice):
+        path = data_root() / "ui.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        preferences = read_close_preferences()
+        preferences.update(remember_close=True, close_behavior=choice)
+        staged = path.with_suffix(".tmp")
+        staged.write_text(json.dumps(preferences, ensure_ascii=False, indent=2), encoding="utf-8")
+        staged.replace(path)
+
+    def ask_close_choice():
+        dialog = Form()
+        dialog.Text = "关闭 Cairn 桌面控制中心？"
+        dialog.FormBorderStyle = FormBorderStyle.FixedDialog
+        dialog.StartPosition = FormStartPosition.CenterScreen
+        dialog.ClientSize = Size(520, 230)
+        dialog.MinimizeBox = False
+        dialog.MaximizeBox = False
+        dialog.ShowInTaskbar = False
+
+        description = Label()
+        description.Text = "退出会停止 Cairn 服务和正在运行的任务。\n最小化到托盘会隐藏窗口，并让服务继续运行。"
+        description.Location = Point(22, 20)
+        description.Size = Size(475, 58)
+        dialog.Controls.Add(description)
+
+        remember = CheckBox()
+        remember.Text = "记住此选项（可在设置中更改）"
+        remember.Location = Point(22, 87)
+        remember.Size = Size(300, 28)
+        dialog.Controls.Add(remember)
+
+        choice = ["continue"]
+        buttons = [
+            ("退出并停止服务", "exit", 22),
+            ("最小化到托盘", "tray", 190),
+            ("继续使用", "continue", 358),
+        ]
+        for title, value, x in buttons:
+            button = Button()
+            button.Text = title
+            button.Location = Point(x, 145)
+            button.Size = Size(145, 38)
+            button.DialogResult = DialogResult.OK
+            button.Click += EventHandler(lambda _sender, _event, selected=value: choice.__setitem__(0, selected))
+            dialog.Controls.Add(button)
+        dialog.CancelButton = next(control for control in dialog.Controls if control.Text == "继续使用")
+        result = dialog.ShowDialog(window.native)
+        return (choice[0] if result == DialogResult.OK else "continue", bool(remember.Checked))
+
+    def handle_close_request():
+        preferences = read_close_preferences()
+        choice = preferences.get("close_behavior", "ask")
+        if preferences.get("remember_close") and choice in {"exit", "tray"}:
+            selected, remember = choice, False
+        else:
+            selected, remember = ask_close_choice()
+        if selected == "continue":
+            return False
+        if remember:
+            try:
+                save_close_preference(selected)
+            except OSError as exc:
+                from System.Windows.Forms import MessageBox
+                MessageBox.Show(f"无法保存关闭选项：{exc}", "Cairn 桌面控制中心")
+        if selected == "tray":
+            minimize_to_tray()
+        else:
+            exit_application()
+        return False
+
     def on_closing(_window):
         if exiting.is_set():
             return True
-        # ExecuteScriptAsync schedules the prompt without blocking WebView's UI
-        # thread; returning False cancels this native close until the choice runs.
-        window.native.webview.CoreWebView2.ExecuteScriptAsync("window.handleNativeClose()")
-        return False
+        return handle_close_request()
 
     def on_closed(_window=None):
         if tray_ref[0]:
@@ -111,11 +193,8 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
         restore.Click += EventHandler(restore_window)
 
         def prompt_exit(_sender=None, _event=None):
-            def show_prompt():
-                tray.Visible = False
-                window.show()
-                window.native.webview.CoreWebView2.ExecuteScriptAsync("window.handleNativeClose(true)")
-            on_ui(show_prompt)
+            tray.Visible = False
+            exit_application()
 
         exit_item.Click += EventHandler(prompt_exit)
         tray.DoubleClick += EventHandler(restore_window)

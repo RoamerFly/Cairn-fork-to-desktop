@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from cairn.dispatcher.config import WorkerConfig
 from cairn.dispatcher.workers.base import DriverResult, RegexSessionDriver
 from cairn.dispatcher.workers.health import HealthResult, http_ping, proxies_from_env
@@ -40,6 +42,7 @@ class CodexDriver(RegexSessionDriver):
                 argv=[
                     "codex",
                     "exec",
+                    "--json",
                     "--dangerously-bypass-approvals-and-sandbox",
                     "--",
                     prompt,
@@ -50,6 +53,7 @@ class CodexDriver(RegexSessionDriver):
             argv=[
                 "codex",
                 "exec",
+                "--json",
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--model",
                 env["CODEX_MODEL"],
@@ -76,6 +80,7 @@ class CodexDriver(RegexSessionDriver):
                 "codex",
                 "exec",
                 "resume",
+                "--json",
                 session,
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--",
@@ -86,6 +91,7 @@ class CodexDriver(RegexSessionDriver):
             "codex",
             "exec",
             "resume",
+            "--json",
             session,
             "--dangerously-bypass-approvals-and-sandbox",
             "--model",
@@ -105,3 +111,35 @@ class CodexDriver(RegexSessionDriver):
             "--",
             prompt,
         ]
+
+    def extract_session(self, session: str | None, stdout: str, stderr: str) -> str | None:
+        if session:
+            return session
+        for event in self._iter_events(stdout):
+            if event.get("type") == "thread.started":
+                thread_id = event.get("thread_id")
+                if isinstance(thread_id, str) and thread_id:
+                    return thread_id
+        return super().extract_session(session, stdout, stderr)
+
+    def extract_response_text(self, stdout: str, stderr: str) -> str:
+        messages = []
+        for event in self._iter_events(stdout):
+            if event.get("type") != "item.completed":
+                continue
+            item = event.get("item")
+            if isinstance(item, dict) and item.get("type") == "agent_message":
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    messages.append(text.strip())
+        return "\n".join(messages) if messages else stdout
+
+    @staticmethod
+    def _iter_events(stdout: str):
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                yield event

@@ -3,11 +3,17 @@
   <div class="flex items-center justify-between gap-2"><h3 class="text-sm font-semibold text-slate-700">节点执行记录</h3><button @click="openDesktopFolder()" class="text-xs text-brand-600">打开任务文件</button></div>
   <p class="text-xs text-slate-400 leading-relaxed" x-text="desktopRecordsLinked ? '已关联到当前行动节点' : '项目级记录：当前节点暂无独立阶段关联'"></p>
   <p x-show="!desktopRecords.length" class="text-xs text-slate-400 leading-relaxed">暂无归档。阶段结束后保存输出；运行中的 Codex 会话保存在任务目录。</p>
+  <section class="rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5 space-y-1.5">
+    <div class="flex justify-between gap-3 text-xs"><span class="text-slate-500">任务累计 Token</span><span class="text-right font-medium text-indigo-700" x-text="formatTokenUsage(desktopTokenUsage.project)"></span></div>
+    <div x-show="desktopRecordsLinked" class="flex justify-between gap-3 text-xs"><span class="text-slate-500">当前行动 Token</span><span class="text-right font-medium text-indigo-700" x-text="formatTokenUsage(desktopTokenUsage.intent)"></span></div>
+    <p class="text-[11px] text-slate-400">来自模型 CLI 返回的用量；不支持报告用量的执行器显示“未提供”。</p>
+  </section>
   <select x-show="desktopRecords.length" x-model="desktopRecordId" @change="loadDesktopRecord()" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white">
     <template x-for="record in desktopRecords" :key="record.record_id"><option :value="record.record_id" x-text="`${record.phase} · ${record.worker || ''} · ${record.started_at || '历史阶段'}`"></option></template>
   </select>
   <template x-if="desktopSelectedRecord()"><section class="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
     <div class="flex justify-between text-xs"><span class="text-slate-400">阶段耗时</span><span x-text="desktopSelectedRecord().duration_ms == null ? '旧记录未保存' : (desktopSelectedRecord().duration_ms / 1000).toFixed(2) + ' 秒'"></span></div>
+    <div class="flex justify-between gap-3 text-xs"><span class="text-slate-400">阶段 Token</span><span class="text-right" x-text="formatTokenUsage(desktopSelectedRecord().token_usage)"></span></div>
     <div class="flex justify-between text-xs"><span class="text-slate-400">退出码</span><span x-text="desktopSelectedRecord().returncode"></span></div>
     <button @click="openDesktopFolder(desktopRecordId)" class="text-xs text-brand-600">打开阶段目录</button>
   </section></template>

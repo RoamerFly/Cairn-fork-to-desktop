@@ -14,6 +14,7 @@ window.cairnApp = function () {
   }
   Object.assign(app, {
     desktopRecords: [], desktopRecordId: '', desktopRecordsLinked: false,
+    desktopTokenUsage: {project: null, intent: null},
     desktopOutput: {stdout: '', stderr: ''}, desktopRecordTab: '执行输出',
     _desktopLoadSequence: 0, _desktopOutputSequence: 0,
     summarizeFactLabel(fact) {
@@ -68,6 +69,7 @@ window.cairnApp = function () {
       const sequence = ++this._desktopLoadSequence;
       if (!this.selectedProjectId) {
         this.desktopRecords = []; this.desktopRecordId = ''; this.desktopOutput = {stdout:'',stderr:''};
+        this.desktopTokenUsage = {project:null,intent:null};
         return;
       }
       let intent = '';
@@ -79,11 +81,19 @@ window.cairnApp = function () {
         const data = await response.json();
         if (sequence !== this._desktopLoadSequence) return;
         this.desktopRecords = data.records; this.desktopRecordsLinked = data.node_linked;
+        this.desktopTokenUsage = data.token_usage || {project:null,intent:null};
         if (!this.desktopRecords.some(r => r.record_id === this.desktopRecordId)) this.desktopRecordId = this.desktopRecords[0]?.record_id || '';
         await this.loadDesktopRecord();
       } catch (e) { if (sequence === this._desktopLoadSequence) this.desktopOutput = {stdout:e.message,stderr:''}; }
     },
     desktopSelectedRecord() { return this.desktopRecords.find(r => r.record_id === this.desktopRecordId) || null; },
+    formatTokenUsage(usage) {
+      if (!usage) return '未提供';
+      if (usage.reported_stages === 0) return `未提供 · ${usage.total_stages || 0} 个阶段无用量记录`;
+      const fmt = key => Number.isFinite(usage[key]) ? usage[key].toLocaleString('zh-CN') : '—';
+      const stages = Number.isFinite(usage.reported_stages) ? ` · ${usage.reported_stages}/${usage.total_stages} 阶段已记录` : '';
+      return `输入 ${fmt('input_tokens')} · 输出 ${fmt('output_tokens')} · 合计 ${fmt('total_tokens')}${stages}`;
+    },
     async loadDesktopRecord() {
       const sequence = ++this._desktopOutputSequence;
       this.desktopOutput = {stdout:'',stderr:''};

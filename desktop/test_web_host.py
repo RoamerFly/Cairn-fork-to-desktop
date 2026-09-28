@@ -26,7 +26,9 @@ class WebHostTests(unittest.TestCase):
         shutil.copyfile(self.fixture.db, self.db)
         stage = self.fixture.root / "output" / "p1" / "workspace" / ".cairn" / "runs" / "explore-1"
         stage.mkdir(parents=True)
-        (stage / "task.json").write_text(json.dumps({"phase": "explore", "intent_id": "i2", "duration_ms": 1250}))
+        (stage / "task.json").write_text(json.dumps({"phase": "explore", "intent_id": "i2", "duration_ms": 1250,
+                                                   "token_usage": {"input_tokens": 12, "output_tokens": 4,
+                                                                   "total_tokens": 16, "cached_input_tokens": 3}}))
         (stage / "stdout.log").write_text("synthetic output", encoding="utf-8")
         self.host = DesktopHost()
         self.host.start()
@@ -43,7 +45,7 @@ class WebHostTests(unittest.TestCase):
     def test_original_ui_assets_and_graph_are_embedded(self):
         shell = self.get("/").decode()
         graph = self.get("/graph").decode()
-        self.assertIn("0.6.0", shell)
+        self.assertIn("0.7.0", shell)
         self.assertIn('id="settings-tab"', shell)
         self.assertTrue(self.get("/desktop-icons/cairn.ico").startswith(b'\x00\x00\x01\x00'))
         self.assertIn("执行记录", graph)
@@ -61,6 +63,9 @@ class WebHostTests(unittest.TestCase):
         self.assertEqual(summaries[0]["intent_count"], 3)
         self.assertIsNone(detail["project"]["reason"])
         self.assertTrue(records["node_linked"])
+        self.assertEqual(records["token_usage"]["project"]["total_tokens"], 16)
+        self.assertEqual(records["token_usage"]["intent"]["input_tokens"], 12)
+        self.assertEqual(records["records"][0]["token_usage"]["output_tokens"], 4)
         self.assertNotIn("directory", records["records"][0])
         output = json.loads(self.get("/desktop/projects/p1/runs/explore-1"))
         self.assertEqual(output["stdout"], "synthetic output")

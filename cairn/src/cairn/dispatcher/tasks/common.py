@@ -156,6 +156,7 @@ def archive_worker_result(
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "duration_ms": duration_ms,
+        "token_usage": extract_token_usage(result.stdout, result.stderr),
     }
     try:
         for name, content in (
@@ -166,6 +167,90 @@ def archive_worker_result(
             container_manager.write_text_file(container_name, f"{directory}/{name}", redact(content))
     except Exception as exc:
         LOG.warning("could not archive worker process container=%s phase=%s error=%s", container_name, phase, exc)
+
+
+def extract_token_usage(stdout: str, stderr: str = "") -> dict[str, int] | None:
+    """Extract provider-reported token counts from supported CLI JSON output."""
+
+    def normalized(value: object) -> dict[str, int] | None:
+        if not isinstance(value, dict):
+            return None
+        details = value.get("input_tokens_details") or value.get("prompt_tokens_details") or {}
+        input_tokens = value.get("input_tokens", value.get("prompt_tokens", value.get("input", value.get("inputTokens"))))
+        output_tokens = value.get("output_tokens", value.get("completion_tokens", value.get("output", value.get("outputTokens"))))
+        cached = value.get("cached_input_tokens", value.get("cache_read_input_tokens",
+                          value.get("cacheRead", value.get("cacheReadInputTokens"))))
+        if cached is None and isinstance(details, dict):
+            cached = details.get("cached_tokens")
+        values = (input_tokens, output_tokens, cached)
+        if not any(isinstance(item, (int, float)) and item >= 0 for item in values):
+            return None
+        usage = {}
+        if isinstance(input_tokens, (int, float)) and input_tokens >= 0:
+            usage["input_tokens"] = int(input_tokens)
+        if isinstance(output_tokens, (int, float)) and output_tokens >= 0:
+            usage["output_tokens"] = int(output_tokens)
+        if isinstance(cached, (int, float)) and cached >= 0:
+            usage["cached_input_tokens"] = int(cached)
+        total = value.get("total_tokens", value.get("totalTokens"))
+        if isinstance(total, (int, float)) and total >= 0:
+            usage["total_tokens"] = int(total)
+        elif "input_tokens" in usage and "output_tokens" in usage:
+            usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+        return usage
+
+    def sum_usages(usages):
+        if not usages:
+            return None
+        keys = {key for usage in usages for key in usage}
+        return {key: sum(usage.get(key, 0) for usage in usages) for key in keys}
+
+    text = stdout.strip()
+    candidates = []
+    if text:
+        try:
+            root = json.loads(text)
+        except json.JSONDecodeError:
+            root = None
+        if isinstance(root, dict):
+            usage = normalized(root.get("usage"))
+            if usage:
+                return usage
+            model_usage = root.get("modelUsage")
+            if isinstance(model_usage, dict):
+                return sum_usages([u for item in model_usage.values() if (u := normalized(item))])
+        for line in text.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else event
+            event_type = payload.get("type") or event.get("type")
+            info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+            usage = (normalized(payload.get("usage")) or normalized(payload.get("last_token_usage"))
+                     or normalized(info.get("last_token_usage")))
+            if usage and event_type in {"turn.completed", "agent_end", "turn_end", "token_count"}:
+                candidates.append((event_type, usage))
+                continue
+            messages = payload.get("messages")
+            if event_type == "agent_end" and isinstance(messages, list):
+                candidates.append((event_type, sum_usages([
+                    u for message in messages if isinstance(message, dict)
+                    and message.get("role") == "assistant"
+                    and (u := normalized(message.get("usage")))
+                ])))
+        codex_turns = [usage for kind, usage in candidates if kind == "turn.completed"]
+        if codex_turns:
+            return sum_usages(codex_turns)
+        pi_turns = [usage for kind, usage in candidates if kind == "agent_end" and usage]
+        if pi_turns:
+            return sum_usages(pi_turns)
+        other = [usage for _kind, usage in candidates if usage]
+        if other:
+            return other[-1]
+    return None
 
 
 def project_allows_conclude_fallback(client: CairnClient, project_id: str, *, worker_name: str, intent_id: str) -> bool:

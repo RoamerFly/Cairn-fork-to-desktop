@@ -134,18 +134,27 @@ class DesktopHost:
                         return self.reply(200, owner.service.action(request.pop("action"), request))
                     parts = path.strip("/").split("/")
                     if len(parts) >= 4 and parts[:2] == ["desktop", "projects"] and parts[3] == "runs":
-                        records = read_runs(output_root(), parts[2])
+                        all_records = read_runs(output_root(), parts[2])
+
+                        def usage_total(items):
+                            usages = [item.get("token_usage") for item in items if isinstance(item.get("token_usage"), dict)]
+                            totals = {key: sum(usage.get(key, 0) for usage in usages)
+                                      for key in ("input_tokens", "output_tokens", "total_tokens", "cached_input_tokens")
+                                      if any(key in usage for usage in usages)}
+                            return {**totals, "reported_stages": len(usages), "total_stages": len(items)}
+
                         if len(parts) == 5:
-                            record = next((r for r in records if Path(r["directory"]).name == parts[4]), None)
+                            record = next((r for r in all_records if Path(r["directory"]).name == parts[4]), None)
                             if not record:
                                 return self.reply(404, {"detail": "阶段不存在"})
                             return self.reply(200, {"stdout": read_record_text(record, "stdout.log"),
                                                     "stderr": read_record_text(record, "stderr.log")})
                         intent = parse_qs(parsed.query).get("intent_id", [""])[0]
-                        exact = [r for r in records if intent and r.get("intent_id") == intent]
+                        exact = [r for r in all_records if intent and r.get("intent_id") == intent]
                         return self.reply(200, {"node_linked": bool(exact), "records": [
                             {**{k: v for k, v in r.items() if k != "directory"}, "record_id": Path(r["directory"]).name}
-                            for r in (exact or records)]})
+                            for r in (exact or all_records)],
+                            "token_usage": {"project": usage_total(all_records), "intent": usage_total(exact)}})
                     if path == "/projects" and self.command == "GET":
                         return self.reply(200, owner.summaries())
                     if path == "/settings" and self.command == "GET":

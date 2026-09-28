@@ -2,7 +2,7 @@ import json
 
 from cairn.dispatcher.config import WorkerConfig
 from cairn.dispatcher.runtime.process import ProcessResult
-from cairn.dispatcher.tasks.common import archive_worker_result
+from cairn.dispatcher.tasks.common import archive_worker_result, extract_token_usage
 
 
 def test_worker_archive_redacts_credentials_and_preserves_evidence() -> None:
@@ -32,3 +32,22 @@ def test_worker_archive_redacts_credentials_and_preserves_evidence() -> None:
     assert metadata["duration_ms"] == 1250
     assert metadata["started_at"] == "2026-01-01T00:00:00Z"
     assert metadata["finished_at"]
+    assert metadata["token_usage"] is None
+
+
+def test_extracts_reported_token_usage_from_codex_pi_and_claude_output() -> None:
+    codex = '{"type":"turn.completed","usage":{"input_tokens":21,"output_tokens":7,"total_tokens":28}}'
+    assert extract_token_usage(codex) == {
+        "input_tokens": 21, "output_tokens": 7, "total_tokens": 28,
+    }
+
+    pi = '{"type":"agent_end","messages":[{"role":"assistant","usage":{"input":11,"output":4,"cacheRead":3}}]}'
+    assert extract_token_usage(pi) == {
+        "input_tokens": 11, "output_tokens": 4, "cached_input_tokens": 3, "total_tokens": 15,
+    }
+
+    claude = '{"result":"ok","usage":{"input_tokens":13,"output_tokens":5,"cache_read_input_tokens":2}}'
+    assert extract_token_usage(claude) == {
+        "input_tokens": 13, "output_tokens": 5, "cached_input_tokens": 2, "total_tokens": 18,
+    }
+    assert extract_token_usage("plain text without provider usage") is None
