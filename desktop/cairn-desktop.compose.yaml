@@ -6,6 +6,10 @@ services:
       context: .
       dockerfile: Dockerfile
     image: cairn-desktop-app
+    environment:
+      # The DB lives in a Windows-host bind mount on desktop installs. DELETE
+      # journaling avoids SQLite WAL shared-memory/locking issues on that mount.
+      CAIRN_SQLITE_JOURNAL_MODE: DELETE
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
