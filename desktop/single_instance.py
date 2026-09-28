@@ -10,6 +10,7 @@ from ctypes import wintypes
 MUTEX_NAME = "Local\\CairnDesktopControlCenterSingleton"
 ERROR_ALREADY_EXISTS = 183
 SW_RESTORE = 9
+SW_SHOW = 5
 
 
 class SingleInstance:
@@ -38,6 +39,7 @@ class SingleInstance:
         for _ in range(20):
             window = user32.FindWindowW(None, self.window_title)
             if window:
+                user32.ShowWindow(window, SW_SHOW)
                 user32.ShowWindow(window, SW_RESTORE)
                 user32.SetForegroundWindow(window)
                 return

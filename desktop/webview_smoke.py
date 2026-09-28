@@ -93,6 +93,20 @@ def main():
             assert abs((bounds.Left + bounds.Width / 2) - (screen.physical_x + screen.physical_width / 2)) < 110, f"horizontal: bounds={bounds}, screen={screen}"
             assert abs((bounds.Top + bounds.Height / 2) - (screen.physical_y + screen.physical_height / 2)) < 110, f"vertical: bounds={bounds}, screen={screen}"
             if args.fixture:
+                wait_for("!jobPending")
+                if not host.service.status()["server"]:
+                    wait_for("document.querySelector('[data-job=\"stop\"]').disabled")
+                    host.service.compose_running = True
+                    js("status(); true")
+                    wait_for("!document.querySelector('[data-job=\"stop\"]').disabled")
+                    host.service.compose_running = False
+                    js("status(); true")
+                    wait_for("document.querySelector('[data-job=\"stop\"]').disabled")
+                js("window.__realRequest=request; window.__statusFailures=0; window.__actionDone=false; request=async(path,method,body)=>{if(path==='/desktop/status'){window.__statusFailures++;throw new Error('模拟状态故障')}if(path==='/desktop/action')return {accepted:true};return window.__realRequest(path,method,body)}; action('check').then(()=>window.__actionDone=true); true")
+                wait_for("window.__actionDone && !jobPending", timeout=10)
+                assert js("window.__statusFailures >= 6")
+                js("request=window.__realRequest; status(); true")
+                wait_for("document.getElementById('state').textContent !== '状态连接中断'")
                 js("show('settings'); true")
                 wait_for("!document.getElementById('settings').classList.contains('hidden')")
                 js("document.getElementById('key').value='sk-fixture-secret'; document.getElementById('output-language').value='en'; action('save'); true")
@@ -243,17 +257,29 @@ def main():
                 while window.native.Visible and time.monotonic() < deadline:
                     time.sleep(0.1)
                 assert not window.native.Visible, "Remembered tray choice did not hide the window"
-                host.restore_window()
+                exe = Path(__file__).resolve().parent / "dist_windows" / "CairnDesktop.exe"
+                if exe.is_file():
+                    duplicate = subprocess.run([str(exe)], timeout=20, capture_output=True)
+                    assert duplicate.returncode == 0, "Duplicate EXE did not return successfully"
+                else:
+                    host.restore_window()
                 deadline = time.monotonic() + 5
                 while not window.native.Visible and time.monotonic() < deadline:
                     time.sleep(0.1)
-                assert window.native.Visible, "Tray restore failed"
+                assert window.native.Visible, "Tray/single-instance restore failed"
                 js("document.getElementById('close-behavior').value='ask'; saveCloseBehavior(); true")
                 wait_for("document.getElementById('close-choice').textContent.includes('关闭时询问')")
                 window.native.BeginInvoke(Action(lambda: window.native.Close()))
                 wait_for("!document.getElementById('shutdown-overlay').classList.contains('hidden')")
-                js("document.getElementById('shutdown-remember').checked=true; closeWindowAction('exit'); true")
+                original_exit = host.exit_application
+                exit_calls = []
+                def count_exit():
+                    exit_calls.append(True)
+                    original_exit()
+                host.exit_application = count_exit
+                js("document.getElementById('shutdown-remember').checked=true; closeWindowAction('exit'); closeWindowAction('exit'); true")
                 assert window.events.closed.wait(20), "Exit choice did not close the desktop window"
+                assert len(exit_calls) == 1, f"Exit request repeated {len(exit_calls)} times"
                 import json
                 saved = json.loads((storage / 'data' / 'ui.json').read_text(encoding='utf-8'))
                 assert saved['remember_close'] and saved['close_behavior'] == 'exit'

@@ -55,6 +55,9 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
             window.show()
             window.restore()
             window.native.TopMost = False
+            window.native.BringToFront()
+            window.native.Activate()
+            ctypes.windll.user32.SetForegroundWindow(window.native.Handle.ToInt64())
         on_ui(show)
 
     def minimize_to_tray():
@@ -118,6 +121,10 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
         return {"remember_close": False, "close_behavior": "ask"}
 
     def handle_close_request():
+        if exit_requested.locked():
+            raise_window()
+            execute_script("window.showCloseProgress && window.showCloseProgress()")
+            return False
         preferences = read_close_preferences()
         choice = preferences.get("close_behavior", "ask")
         if preferences.get("remember_close") and choice in {"exit", "tray"}:
@@ -165,6 +172,12 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
         tray.DoubleClick += EventHandler(restore_window)
         tray_ref[0] = tray
         tray_icon_ref[0] = icon
+        # A second EXE instance restores the hidden window through Win32,
+        # bypassing restore_window(). Keep the tray state in sync in that case.
+        def on_visibility_changed(_sender, _event):
+            if window.native.Visible:
+                tray.Visible = False
+        window.native.VisibleChanged += EventHandler(on_visibility_changed)
 
     def on_shown(_window=None):
         if tray_ref[0] is None:
