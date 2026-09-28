@@ -1,0 +1,46 @@
+<div x-show="desktopFindingModalOpen" class="fixed inset-0 flex items-center justify-center p-4 sm:p-6"
+     style="display:none;z-index:9998;background:rgba(15,23,42,.65);backdrop-filter:blur(6px)"
+     @click.self="desktopFindingModalOpen=false" @keydown.escape.window="desktopFindingModalOpen=false">
+  <section role="dialog" aria-modal="true" aria-label="漏洞整理结果" class="bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+           style="width:min(1050px,96vw);height:min(780px,86vh)">
+    <div class="shrink-0 px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-4">
+      <div class="min-w-0"><div class="text-base font-semibold text-slate-800">漏洞整理结果</div><div class="text-xs text-slate-500 mt-1">事实 <span class="font-mono" x-text="selectedFactId()"></span> · <span x-text="`${desktopFinding.findings.length} 条发现`"></span></div></div>
+      <button type="button" @click="desktopFindingModalOpen=false" aria-label="关闭漏洞结果弹窗" class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">关闭</button>
+    </div>
+    <div x-show="desktopFinding.findings.length" class="shrink-0 border-b border-slate-200 px-5 sm:px-6 pt-3 overflow-x-auto" role="tablist" aria-label="漏洞">
+      <div class="flex gap-2 min-w-max">
+        <template x-for="(finding, index) in desktopFinding.findings" :key="index">
+          <button type="button" role="tab" @click="desktopFindingIndex=index;desktopFindingSection='detail'"
+            :aria-selected="desktopFindingIndex===index" :class="desktopFindingIndex===index ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-500 hover:text-slate-800'"
+            class="max-w-64 truncate border-b-2 px-3 py-2 text-sm font-medium" x-text="`${index+1}. ${finding.title || '未命名漏洞'}`"></button>
+        </template>
+      </div>
+    </div>
+    <template x-if="desktopSelectedFinding()">
+      <div class="min-h-0 flex-1 flex flex-col">
+        <div class="shrink-0 px-5 sm:px-6 pt-4 flex gap-2" role="tablist" aria-label="漏洞内容">
+          <button type="button" role="tab" @click="desktopFindingSection='detail'" :aria-selected="desktopFindingSection==='detail'"
+            :class="desktopFindingSection==='detail' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="rounded-lg px-4 py-2 text-sm font-medium">漏洞详情</button>
+          <button type="button" role="tab" @click="desktopFindingSection='reproduction'" :aria-selected="desktopFindingSection==='reproduction'"
+            :class="desktopFindingSection==='reproduction' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="rounded-lg px-4 py-2 text-sm font-medium">复现步骤</button>
+        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto px-5 sm:px-6 py-5 select-text" style="scrollbar-gutter:stable">
+          <template x-if="desktopFindingSection==='detail'"><div class="space-y-5 text-sm leading-7">
+            <div><h3 class="text-lg font-semibold text-slate-800 break-words" x-text="desktopSelectedFinding().title || '未命名漏洞'"></h3><p x-show="desktopSelectedFinding().category" class="mt-1 text-xs text-indigo-600" x-text="desktopSelectedFinding().category"></p></div>
+            <div x-show="desktopSelectedFinding().location"><h4 class="font-semibold text-slate-500">位置</h4><p class="text-slate-700 whitespace-pre-wrap break-all" x-text="desktopSelectedFinding().location"></p></div>
+            <div x-show="desktopSelectedFinding().summary"><h4 class="font-semibold text-slate-500">发现描述</h4><p class="text-slate-700 whitespace-pre-wrap break-words" x-text="desktopSelectedFinding().summary"></p></div>
+            <div x-show="desktopSelectedFinding().impact"><h4 class="font-semibold text-slate-500">影响</h4><p class="text-slate-700 whitespace-pre-wrap break-words" x-text="desktopSelectedFinding().impact"></p></div>
+            <div x-show="desktopSelectedFinding().evidence?.length"><h4 class="font-semibold text-slate-500">证据</h4><ol class="list-disc pl-5 space-y-1 text-slate-700"><template x-for="(item, itemIndex) in (desktopSelectedFinding().evidence || [])" :key="itemIndex"><li class="whitespace-pre-wrap break-all" x-text="item"></li></template></ol></div>
+            <div x-show="desktopSelectedFinding().limitations"><h4 class="font-semibold text-slate-500">边界与待确认项</h4><p class="text-slate-700 whitespace-pre-wrap break-words" x-text="desktopSelectedFinding().limitations"></p></div>
+          </div></template>
+          <template x-if="desktopFindingSection==='reproduction'"><div class="space-y-4">
+            <p x-show="!desktopSelectedFinding().reproduction?.length" class="text-sm text-slate-500">现有记录不足以给出可靠复现步骤。请查看原始事实和执行记录。</p>
+            <ol class="space-y-3"><template x-for="(step, stepIndex) in (desktopSelectedFinding().reproduction || [])" :key="stepIndex"><li class="flex gap-3 rounded-xl border border-teal-100 bg-teal-50/60 p-4 text-sm"><span class="shrink-0 w-7 h-7 rounded-full bg-teal-600 text-white flex items-center justify-center font-semibold" x-text="stepIndex+1"></span><div class="min-w-0 space-y-2"><p class="text-slate-800 whitespace-pre-wrap break-all" x-text="step.action"></p><p x-show="step.expected" class="text-slate-600 whitespace-pre-wrap break-all"><span class="font-medium">预期观察：</span><span x-text="step.expected"></span></p></div></li></template></ol>
+          </div></template>
+        </div>
+      </div>
+    </template>
+    <div x-show="!desktopFinding.findings.length" class="min-h-0 flex-1 flex items-center justify-center px-6 text-sm text-slate-500 text-center">现有事实中没有足够依据确认漏洞。可查看原始事实和执行记录。</div>
+    <div class="shrink-0 px-5 sm:px-6 py-3 border-t border-slate-100 bg-white flex items-center justify-between gap-3 text-xs text-slate-400"><span>结果保存在当前任务的数据目录中。</span><button type="button" @click="desktopFindingModalOpen=false;openDesktopOriginalFact()" class="text-brand-700 font-medium hover:underline">查看原始事实 ↗</button></div>
+  </section>
+</div>

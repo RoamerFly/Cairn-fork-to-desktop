@@ -26,9 +26,13 @@ def main(test_callback=None):
         host = DesktopHost()
         host.start()
         screen = webview.screens[0]
-        width = min(1440, max(900, screen.width - 70))
-        height = min(930, max(620, screen.height - 90))
-        window = webview.create_window(APP_TITLE, host.url, width=width, height=height, min_size=(900, 620))
+        width = min(1440, max(640, screen.width - 70))
+        height = min(930, max(480, screen.height - 90))
+        x = screen.x + (screen.width - width) // 2
+        y = screen.y + (screen.height - height) // 2
+        window = webview.create_window(APP_TITLE, host.url, width=width, height=height,
+                                       x=x, y=y, screen=screen,
+                                       min_size=(min(900, width), min(620, height)))
         install_window_lifecycle(window, host, Path(__file__).resolve().parent / "assets" / "cairn.ico")
         host.service.action('check', {})
         def started():

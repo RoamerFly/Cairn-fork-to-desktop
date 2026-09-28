@@ -16,6 +16,7 @@ window.cairnApp = function () {
     desktopRecords: [], desktopRecordId: '', desktopRecordsLinked: false,
     desktopTokenUsage: {project: null, intent: null},
     desktopFinding: {available: false, findings: []}, desktopFindingBusy: false, desktopFindingError: '',
+    desktopFindingModalOpen: false, desktopFindingIndex: 0, desktopFindingSection: 'detail',
     desktopOriginalFactOpen: false, desktopOriginalFactText: '', desktopOriginalFactId: '',
     desktopOutput: {stdout: '', stderr: ''}, desktopRecordTab: '执行输出',
     _desktopLoadSequence: 0, _desktopOutputSequence: 0, _desktopFindingSequence: 0,
@@ -101,11 +102,21 @@ window.cairnApp = function () {
       this.desktopOriginalFactText = record.description || '';
       this.desktopOriginalFactOpen = true;
     },
+    openDesktopFindingModal() {
+      if (!this.desktopFinding.available) return;
+      this.desktopFindingIndex = 0;
+      this.desktopFindingSection = 'detail';
+      this.desktopFindingModalOpen = true;
+    },
+    desktopSelectedFinding() {
+      return this.desktopFinding.findings?.[this.desktopFindingIndex] || null;
+    },
     async loadDesktopFinding() {
       const sequence = ++this._desktopFindingSequence;
       const path = this.desktopFindingPath();
       this.desktopFinding = {available:false, findings:[]};
       this.desktopFindingError = '';
+      this.desktopFindingModalOpen = false;
       if (!path) return;
       try {
         const response = await fetch(path);
@@ -128,6 +139,8 @@ window.cairnApp = function () {
         if (!response.ok) throw new Error(data.detail || '整理漏洞结果失败');
         if (sequence === this._desktopFindingSequence) {
           this.desktopFinding = data;
+          this.desktopFindingIndex = 0;
+          this.desktopFindingSection = 'detail';
           this.loadDesktopRecords();
         }
       } catch (error) {

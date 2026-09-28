@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ctypes
 import threading
 import time
 from pathlib import Path
@@ -14,7 +15,7 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
     from System import Action, EventHandler
     from System.Drawing import Icon
     from System.Windows.Forms import (
-        ContextMenuStrip, NotifyIcon, ToolStripMenuItem,
+        ContextMenuStrip, FormWindowState, NotifyIcon, ToolStripMenuItem,
     )
 
     tray_ref = [None]
@@ -24,6 +25,21 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
 
     def execute_script(script):
         on_ui(lambda: window.native.webview.CoreWebView2.ExecuteScriptAsync(script))
+
+    def raise_window():
+        def show():
+            native = window.native
+            native.Show()
+            if native.WindowState == FormWindowState.Minimized:
+                native.WindowState = FormWindowState.Normal
+            native.TopMost = True
+            native.BringToFront()
+            native.Activate()
+            ctypes.windll.user32.SetForegroundWindow(native.Handle.ToInt64())
+        on_ui(show)
+
+    def dismiss_close_dialog():
+        on_ui(lambda: setattr(window.native, "TopMost", False))
 
     def on_ui(callback):
         native = window.native
@@ -38,6 +54,7 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
                 tray_ref[0].Visible = False
             window.show()
             window.restore()
+            window.native.TopMost = False
         on_ui(show)
 
     def minimize_to_tray():
@@ -45,12 +62,14 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
             if tray_ref[0] is None:
                 return
             tray_ref[0].Visible = True
+            window.native.TopMost = False
             window.hide()
         on_ui(hide)
 
     def exit_application():
         if not exit_requested.acquire(blocking=False):
             return
+        raise_window()
         execute_script("window.showCloseProgress && window.showCloseProgress()")
         def shutdown():
             try:
@@ -107,6 +126,7 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
             else:
                 exit_application()
         else:
+            raise_window()
             execute_script("window.showCloseDialog && window.showCloseDialog()")
         return False
 
@@ -155,5 +175,6 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
     window.events.closed += on_closed
     host.minimize_to_tray = minimize_to_tray
     host.restore_window = restore_window
+    host.dismiss_close_dialog = dismiss_close_dialog
     host.exit_application = exit_application
     host.force_exit_application = force_exit_application

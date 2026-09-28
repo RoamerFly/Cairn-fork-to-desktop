@@ -51,6 +51,8 @@ class WebHostTests(unittest.TestCase):
         self.assertTrue(self.get("/desktop-icons/cairn.ico").startswith(b'\x00\x00\x01\x00'))
         self.assertIn("执行记录", graph)
         self.assertIn("漏洞结果", graph)
+        self.assertIn("查看结果（", graph)
+        self.assertIn('aria-label="漏洞整理结果"', graph)
         self.assertIn("现有记录不足以给出可靠复现步骤", graph)
         self.assertIn("查看原始事实（完整记录）", graph)
         self.assertIn('aria-label="原始事实"', graph)

@@ -21,6 +21,7 @@ OUTPUT = Path(__file__).resolve().parent / "design" / "cairn-desktop-implemented
 SETTINGS_OUTPUT = OUTPUT.with_name("cairn-settings-implemented.png")
 CLOSE_OUTPUT = OUTPUT.with_name("cairn-close-implemented.png")
 FACT_OUTPUT = OUTPUT.with_name("cairn-original-fact-implemented.png")
+FINDING_OUTPUT = OUTPUT.with_name("cairn-finding-implemented.png")
 
 
 def main():
@@ -50,7 +51,12 @@ def main():
                           "summary": "未经登录即可取得测试资料。", "impact": "测试资料可被未授权访问。",
                           "evidence": ["未经登录请求返回 HTTP 200，响应包含测试资料。"],
                           "reproduction": [{"action": "在未登录状态请求 GET /example", "expected": "HTTP 200，响应包含测试资料"}],
-                          "limitations": "仅有这一次请求的记录。"}]}, ensure_ascii=False), encoding="utf-8")
+                          "limitations": "仅有这一次请求的记录。"},
+                         {"title": "第二条测试发现", "category": "配置检查", "location": "GET /sample",
+                          "summary": "用于验证多漏洞标签切换。", "impact": "测试影响。",
+                          "evidence": ["测试证据"],
+                          "reproduction": [{"action": "请求 GET /sample", "expected": "观察测试响应"}],
+                          "limitations": "仅用于界面测试。"}]}, ensure_ascii=False), encoding="utf-8")
         stage = storage / "output" / "p1" / "workspace" / ".cairn" / "runs" / "explore-1"
         stage.mkdir(parents=True)
         (stage / "task.json").write_text('{"intent_id":"i2","phase":"explore","worker":"fixture","duration_ms":1250}', encoding="utf-8")
@@ -82,6 +88,10 @@ def main():
         try:
             wait_for(f"!!document.getElementById('graph')?.contentWindow?.desktopGraphApp")
             wait_for("initialized")
+            screen = __import__('webview').screens[0]
+            bounds = window.native.Bounds
+            assert abs((bounds.Left + bounds.Width / 2) - (screen.physical_x + screen.physical_width / 2)) < 110, f"horizontal: bounds={bounds}, screen={screen}"
+            assert abs((bounds.Top + bounds.Height / 2) - (screen.physical_y + screen.physical_height / 2)) < 110, f"vertical: bounds={bounds}, screen={screen}"
             if args.fixture:
                 js("show('settings'); true")
                 wait_for("!document.getElementById('settings').classList.contains('hidden')")
@@ -121,11 +131,22 @@ def main():
                 wait_for(f"{prefix}.desktopRecordsLinked")
                 js(f"{prefix}.sideTab='detail'; {prefix}.layoutMode='elk_lr'; {prefix}.applySelectedLayout(); true")
                 wait_for(f"{prefix}.desktopFinding?.available")
-                assert js("document.getElementById('graph').contentDocument.body.innerText.includes('未授权读取测试资料')")
-                assert js("document.getElementById('graph').contentDocument.body.innerText.includes('复现')")
+                wait_for("document.getElementById('graph').contentDocument.body.innerText.includes('查看结果（2 条）')")
+                js("Array.from(document.getElementById('graph').contentDocument.querySelectorAll('button')).find(b=>b.innerText.includes('查看结果（2 条）')).click(); true")
+                wait_for(f"{prefix}.desktopFindingModalOpen")
+                wait_for("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"漏洞整理结果\"]')?.offsetHeight > 300")
+                assert js(f"{prefix}.desktopSelectedFinding().title === '未授权读取测试资料'")
+                js("Array.from(document.getElementById('graph').contentDocument.querySelectorAll('[aria-label=\"漏洞内容\"] button')).find(b=>b.innerText==='复现步骤').click(); true")
+                wait_for("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"漏洞整理结果\"]')?.innerText.includes('在未登录状态请求')")
+                js("document.getElementById('graph').contentDocument.querySelectorAll('[aria-label=\"漏洞\"] button')[1].click(); true")
+                wait_for("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"漏洞整理结果\"]')?.innerText.includes('第二条测试发现')")
+                assert js(f"{prefix}.desktopSelectedFinding().title === '第二条测试发现'")
+                js(f"{prefix}.desktopFindingIndex=0; true")
+                js(f"{prefix}.desktopFindingSection='detail'; true")
+                js(f"{prefix}.desktopFindingModalOpen=false; true")
                 js(f"{prefix}.openDesktopOriginalFact(); true")
                 wait_for(f"{prefix}.desktopOriginalFactOpen")
-                assert js("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"原始事实\"]')?.offsetHeight > 300")
+                wait_for("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"原始事实\"]')?.offsetHeight > 300")
                 js(f"{prefix}.desktopOriginalFactText = '长记录 '.repeat(3000); true")
                 assert js("(() => {const p=document.getElementById('graph').contentDocument.querySelector('[aria-label=\"原始事实\"]'); return p.querySelector('.overflow-y-auto').scrollHeight > p.querySelector('.overflow-y-auto').clientHeight})()")
                 js(f"{prefix}.desktopOriginalFactOpen=false; true")
@@ -166,6 +187,17 @@ def main():
             with Image.open(OUTPUT) as image:
                 assert image.width > 500 and image.height > 300
             if not args.fixture:
+                wait_for(f"{prefix}.desktopFinding?.available")
+                js(f"{prefix}.openDesktopFindingModal(); true")
+                wait_for(f"{prefix}.desktopFindingModalOpen")
+                stream = FileStream(str(FINDING_OUTPUT), FileMode.Create)
+                tasks.clear()
+                window.native.Invoke(Action(capture))
+                try:
+                    assert tasks[0].Wait(10000), "Finding result capture timed out"
+                finally:
+                    stream.Dispose()
+                js(f"{prefix}.desktopFindingModalOpen=false; true")
                 js(f"{prefix}.openDesktopOriginalFact(); true")
                 wait_for(f"{prefix}.desktopOriginalFactOpen")
                 stream = FileStream(str(FACT_OUTPUT), FileMode.Create)
@@ -190,6 +222,7 @@ def main():
             if args.fixture:
                 window.native.BeginInvoke(Action(lambda: window.native.Close()))
                 wait_for("!document.getElementById('shutdown-overlay').classList.contains('hidden')")
+                assert window.native.TopMost and window.native.Visible
                 stream = FileStream(str(CLOSE_OUTPUT), FileMode.Create)
                 tasks.clear()
                 window.native.Invoke(Action(capture))
@@ -199,6 +232,10 @@ def main():
                     stream.Dispose()
                 js("hideCloseDialog(); true")
                 wait_for("document.getElementById('shutdown-overlay').classList.contains('hidden')")
+                deadline = time.monotonic() + 5
+                while window.native.TopMost and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                assert not window.native.TopMost, "Dismissed close dialog left window topmost"
                 js("document.getElementById('close-behavior').value='tray'; saveCloseBehavior(); true")
                 wait_for("document.getElementById('close-choice').textContent.includes('已记住：最小化到系统托盘')")
                 window.native.BeginInvoke(Action(lambda: window.native.Close()))

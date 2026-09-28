@@ -90,7 +90,8 @@ class DesktopHost:
                         page = page.replace(raw_fact, (WEB / "finding.html").read_text(encoding="utf-8"), 1)
                         multi_fact = '<p class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words" x-text="fact.description"></p>'
                         page = page.replace(multi_fact, '<button type="button" @click="openDesktopOriginalFact(fact)" class="text-xs text-brand-700">查看原始事实 ↗</button>')
-                        page = page.replace('</body>', (WEB / "original_fact_modal.html").read_text(encoding="utf-8") +
+                        page = page.replace('</body>', (WEB / "finding_result_modal.html").read_text(encoding="utf-8") +
+                            (WEB / "original_fact_modal.html").read_text(encoding="utf-8") +
                             f'<script>window.DESKTOP_TOKEN={json.dumps(owner.token)}</script><script src="/desktop-assets/graph.js"></script></body>')
                         return self.reply(200, page, "text/html; charset=utf-8")
                     if path.startswith(("/static/", "/desktop-assets/", "/desktop-icons/")):
@@ -135,6 +136,8 @@ class DesktopHost:
                             owner.exit_application()
                         elif request.get("action") == "force_exit" and owner.force_exit_application:
                             owner.force_exit_application()
+                        elif request.get("action") == "dismiss" and owner.dismiss_close_dialog:
+                            owner.dismiss_close_dialog()
                         else:
                             return self.reply(400, {"detail": "未知窗口操作"})
                         return self.reply(200, {"accepted": True})
@@ -220,6 +223,7 @@ class DesktopHost:
         self.minimize_to_tray = None
         self.exit_application = None
         self.force_exit_application = None
+        self.dismiss_close_dialog = None
 
     def start(self):
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
