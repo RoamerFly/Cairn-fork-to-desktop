@@ -17,6 +17,7 @@ from test_graph_data import GraphDataTests
 from web_main import main as run_desktop
 
 OUTPUT = Path(__file__).resolve().parent / "design" / "cairn-desktop-implemented.png"
+SETTINGS_OUTPUT = OUTPUT.with_name("cairn-settings-implemented.png")
 
 
 def main():
@@ -66,6 +67,23 @@ def main():
         prefix = "document.getElementById('graph').contentWindow.desktopGraphApp"
         try:
             wait_for(f"!!document.getElementById('graph')?.contentWindow?.desktopGraphApp")
+            wait_for("initialized")
+            if args.fixture:
+                js("show('settings'); true")
+                wait_for("!document.getElementById('settings').classList.contains('hidden')")
+                js("document.getElementById('key').value='sk-fixture-secret'; document.getElementById('output-language').value='en'; action('save'); true")
+                wait_for("document.getElementById('current-language').textContent === 'English'")
+                assert host.service.output_language == 'en'
+                assert 'sk-fixture-secret' not in js("document.getElementById('logs').textContent")
+                js("document.getElementById('output-language').value='zh-CN'; action('save'); true")
+                wait_for("document.getElementById('current-language').textContent === '简体中文'")
+                js("document.getElementById('layout').value='dagre_lr'; document.getElementById('panel-width').value='460'; document.getElementById('actor').value='测试用户'; savePreferences(); true")
+                wait_for(f"{prefix}.layoutMode === 'dagre_lr' && {prefix}.sidePanelWidth === 460")
+                js("show('control'); show('settings'); true")
+                wait_for("document.getElementById('layout').value === 'dagre_lr'")
+                # Restore the graph defaults used by the rest of this smoke.
+                js("document.getElementById('layout').value='klay_tb'; document.getElementById('panel-width').value='390'; savePreferences(); true")
+                wait_for(f"{prefix}.layoutMode === 'klay_tb'")
             js("show('graph')")
             projects = host.summaries()
             assert projects, "No historical projects to display"
@@ -120,7 +138,17 @@ def main():
                 stream.Dispose()
             with Image.open(OUTPUT) as image:
                 assert image.width > 500 and image.height > 300
+            js("show('settings'); true")
+            time.sleep(0.5)
+            stream = FileStream(str(SETTINGS_OUTPUT), FileMode.Create)
+            tasks.clear()
+            window.native.Invoke(Action(capture))
+            try:
+                assert tasks[0].Wait(10000), "Settings capture timed out"
+            finally:
+                stream.Dispose()
             print("WebView2 smoke passed: upstream graph, layouts, replay, node logs, preserved viewport")
+            print("Settings smoke passed: language/key persistence, live graph preferences, icon")
             print(OUTPUT)
         except Exception:
             failures.append(traceback.format_exc())

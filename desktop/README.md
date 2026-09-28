@@ -1,6 +1,6 @@
 # Cairn Windows 桌面版
 
-`CairnDesktop.exe` 0.5.0 是 Cairn 的单文件 Windows 桌面控制台，用于配置和运行 Docker 中的 Cairn 服务及 Codex Worker。图界面直接复用原项目的 HTML、Cytoscape、Dagre/Klay/ELK 布局与 Alpine 交互，通过 WebView2 放进同一个桌面窗口；控制中心与常用图操作使用中文。程序内含 Cairn 源码、锁文件、Dockerfile、Compose 配置和 DeepSeek/Codex 配置模板。目标电脑无需另装 Python，但需要 Microsoft Edge WebView2 Runtime；执行任务仍需要 Docker Desktop 运行 Linux 容器。Windows 命名互斥量保证界面只运行一个实例，重复打开会切回已打开的窗口。
+`CairnDesktop.exe` 0.6.0 是 Cairn 的单文件 Windows 桌面控制台，用于配置和运行 Docker 中的 Cairn 服务及 Codex Worker。图界面直接复用原项目的 HTML、Cytoscape、Dagre/Klay/ELK 布局与 Alpine 交互，通过 WebView2 放进同一个桌面窗口；控制中心与常用图操作使用中文。程序内含 Cairn 源码、锁文件、Dockerfile、Compose 配置和 DeepSeek/Codex 配置模板。目标电脑无需另装 Python，但需要 Microsoft Edge WebView2 Runtime；执行任务仍需要 Docker Desktop 运行 Linux 容器。Windows 命名互斥量保证界面只运行一个实例，重复打开会切回已打开的窗口。
 
 首次启动时，EXE 同级会自动创建 `CairnDesktopData`：`app` 保存解压的运行文件，`data` 保存配置与 SQLite 数据库，`output/<项目 ID>/workspace` 保存 Agent 的工作文件，`output/<项目 ID>/codex` 保存 Codex 会话。DeepSeek API Key 以明文保存在 `CairnDesktopData\data\dispatch.yaml`，不会被打包进 EXE。控制中心不回传已保存密钥；输入框留空会复用本机配置。`data/ui.json` 保存图布局和面板宽度，`data/webview` 保存浏览器运行数据。旧版 `%LOCALAPPDATA%\CairnDesktop` 的配置和数据库会复制到新目录，旧文件保留。请把 EXE 放在可写目录；复制 EXE 时连同 `CairnDesktopData` 一起复制即可迁移状态。可用 `CAIRN_DESKTOP_STORAGE_ROOT` 覆盖存储根目录。Cairn API 服务仅监听 `127.0.0.1:8000`；桌面 UI 使用独立的随机本地端口，只绑定回环地址。
 
@@ -26,6 +26,16 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 
 本机模式的成本与推荐方案见 [本机执行改造方案](LOCAL_MODE_PLAN.md)。0.5.0 调整的是桌面 UI，执行端仍为 Docker。
 
+## 设置与输出语言（0.6.0）
+
+顶部“设置”页集中管理 DeepSeek 密钥、模型、任务输出语言、图布局、人工操作名称、详情面板宽度和本机存储入口。密钥留空时复用已保存配置，不回传到页面；图偏好保存后立即应用。模型与语言保存后需通过“构建并启动”重新启动服务，运行中的任务请先完成或停止。
+
+桌面模板默认 `runtime.output_language: zh-CN`。Dispatcher 对初始化、规划、探索和收尾五类提示词追加输出语言要求，事实说明、行动描述、总结及报告使用简体中文；JSON 字段、命令、标识符及原始证据保留原文。可选择 English 或跟随原提示词，核心配置未指定语言时沿用旧行为。历史任务的数据库与报告不会自动改写，第三方工具原始日志也不会强制翻译。
+
+报告的具体文件名由任务与 Agent 决定，通常位于 `output/<项目 ID>/workspace/` 的子目录。控制中心和设置页均提供“打开任务文件／产物”入口，图页的“执行记录”可打开项目或阶段目录。阶段归档位于 `workspace/.cairn/runs/<阶段>/`，包含 `task.json`、`stdout.log`、`stderr.log`；Codex 会话在项目的 `codex/` 子目录。
+
+应用图标由图像生成工具生成，使用石标与图节点主题。源图为 `assets/cairn.png`，Windows 多尺寸图标为 `assets/cairn.ico`；构建时嵌入 EXE，运行时用于窗口、控制中心和关于页。图标生成说明见 [图标来源](assets/README.md)。
+
 ## 构建
 
 在 Windows 上双击 `desktop\build_windows.bat`，或从仓库根目录运行：
@@ -41,7 +51,7 @@ desktop\build_windows.bat
 ## 运行
 
 1. 启动 Docker Desktop，并确保使用 Linux 容器。
-2. 运行 `CairnDesktop.exe`，填写你的 DeepSeek API Key、选择模型，然后点击“构建并启动”。
+2. 运行 `CairnDesktop.exe`，在“设置”页填写 DeepSeek API Key、选择模型与任务输出语言并保存，然后在“控制中心”点击“构建并启动”。
 3. 点击“任务过程图”，在列表中创建任务或选择已有任务。也可打开 `http://127.0.0.1:8000` 使用原 Cairn Web 界面。
 4. 使用“停止服务”停止当前任务和 Cairn 的 Compose 服务。
 

@@ -12,6 +12,7 @@ runtime:
   healthcheck_timeout: 60
   worker_healthcheck: startup_only
   prompt_group: default
+  output_language: zh-CN
 
 tasks:
   bootstrap:

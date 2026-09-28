@@ -39,6 +39,15 @@ window.cairnApp = function () {
     actorName() { return this.localPrefs.actor_name === 'Human' ? '用户' : this.localPrefs.actor_name; },
     saveLocalPrefs() { savePrefs.call(this); this.saveDesktopPreferences(); },
     saveSidePanelWidth() { saveWidth.call(this); this.saveDesktopPreferences(); },
+    applyDesktopPreferences(preferences) {
+      clearTimeout(this._desktopPreferencesTimer);
+      Object.assign(this.localPrefs, preferences);
+      this.sidePanelWidth = preferences.sidePanelWidth;
+      this.layoutMode = preferences.layout_mode;
+      savePrefs.call(this);
+      saveWidth.call(this);
+      if (this.cy) { this.cy.resize(); this.applySelectedLayout(); }
+    },
     saveDesktopPreferences() {
       clearTimeout(this._desktopPreferencesTimer);
       this._desktopPreferencesTimer = setTimeout(() => fetch('/desktop/preferences', {method:'PUT',

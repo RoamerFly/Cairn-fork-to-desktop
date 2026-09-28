@@ -1,6 +1,7 @@
 """Single-instance Windows desktop shell with the original Cairn graph UI."""
 
 import ctypes
+from pathlib import Path
 
 import webview
 
@@ -32,6 +33,7 @@ def main(test_callback=None):
             if test_callback:
                 test_callback(window, host)
         webview.start(started, gui="edgechromium", private_mode=False,
+                      icon=str(Path(__file__).resolve().parent / "assets" / "cairn.ico"),
                       storage_path=str(data_root() / "webview"))
     except Exception as exc:
         ctypes.windll.user32.MessageBoxW(None, f"桌面界面启动失败：{exc}\n请确认已安装 Microsoft Edge WebView2 Runtime。", APP_TITLE, 0x10)

@@ -38,6 +38,16 @@ class DesktopServiceTests(unittest.TestCase):
         self.service.log("sk-fixture-secret should be removed")
         self.assertIn("[API KEY]", self.service.logs[-1])
 
+    def test_output_language_validates_and_survives_restart(self):
+        self.service.save({"api_key": "sk-fixture-secret", "output_language": "en"})
+        self.assertEqual(DesktopService().output_language, "en")
+        original = (data_root() / "dispatch.yaml").read_bytes()
+        with self.assertRaises(ValueError):
+            self.service.save({"output_language": "invalid"})
+        self.assertEqual((data_root() / "dispatch.yaml").read_bytes(), original)
+        self.service.save({"output_language": "zh-CN"})
+        self.assertEqual(DesktopService().output_language, "zh-CN")
+
     def test_start_reuses_image_and_only_pulls_if_missing(self):
         body = {"api_key": "sk-fixture-secret", "model": "deepseek-flash"}
         with patch("web_service.docker_available", return_value=(True, "ready")), \

@@ -43,7 +43,9 @@ class WebHostTests(unittest.TestCase):
     def test_original_ui_assets_and_graph_are_embedded(self):
         shell = self.get("/").decode()
         graph = self.get("/graph").decode()
-        self.assertIn("0.5.0", shell)
+        self.assertIn("0.6.0", shell)
+        self.assertIn('id="settings-tab"', shell)
+        self.assertTrue(self.get("/desktop-icons/cairn.ico").startswith(b'\x00\x00\x01\x00'))
         self.assertIn("执行记录", graph)
         self.assertIn("cytoscape", graph)
         self.assertIn("startProjectReplay", graph)

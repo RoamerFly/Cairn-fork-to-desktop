@@ -19,6 +19,7 @@ from graph_data import read_projects, read_record_text, read_runs
 from web_service import DesktopService
 
 WEB = Path(__file__).resolve().parent / "web"
+ASSETS = Path(__file__).resolve().parent / "assets"
 
 
 def normalize(detail):
@@ -85,8 +86,8 @@ class DesktopHost:
                         page = page.replace('<!-- Detail -->', (WEB / "records.html").read_text(encoding="utf-8") + '<!-- Detail -->')
                         page = page.replace('</body>', f'<script>window.DESKTOP_TOKEN={json.dumps(owner.token)}</script><script src="/desktop-assets/graph.js"></script></body>')
                         return self.reply(200, page, "text/html; charset=utf-8")
-                    if path.startswith("/static/") or path.startswith("/desktop-assets/"):
-                        base = owner.static if path.startswith("/static/") else WEB
+                    if path.startswith(("/static/", "/desktop-assets/", "/desktop-icons/")):
+                        base = owner.static if path.startswith("/static/") else ASSETS if path.startswith("/desktop-icons/") else WEB
                         file = (base / path.split("/", 2)[2]).resolve()
                         if not file.is_relative_to(base.resolve()) or not file.is_file():
                             return self.reply(404, {"detail": "File not found"})

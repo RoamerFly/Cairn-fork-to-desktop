@@ -10,6 +10,8 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 from core import (
     CREATE_NO_WINDOW, SERVER_URL, WORKER_IMAGE, data_root, docker_available,
     load_saved_settings, make_config, output_root, runtime_root, server_available, storage_root,
@@ -25,6 +27,9 @@ class DesktopService:
         self.error = ""
         self.docker = (False, "正在检测")
         self.key, self.model = load_saved_settings(data_root() / "dispatch.yaml")
+        settings = data_root() / "dispatch.yaml"
+        saved = yaml.safe_load(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
+        self.output_language = (saved or {}).get("runtime", {}).get("output_language", "zh-CN")
         self.log(f"数据目录：{storage_root()}")
 
     def log(self, message):
@@ -38,12 +43,13 @@ class DesktopService:
             state = {"busy": self.busy, "logs": list(self.logs), "error": self.error}
         return {**state, "server": server_available(), "docker": self.docker[0],
                 "docker_text": self.docker[1], "key_configured": bool(self.key),
-                "model": self.model, "storage": str(storage_root()), "mode": "docker"}
+                "model": self.model, "output_language": self.output_language,
+                "storage": str(storage_root()), "mode": "docker"}
 
     def action(self, name, body):
-        if name in {"open_output", "open_project", "open_run"}:
-            folder = output_root()
-            if name != "open_output":
+        if name in {"open_output", "open_storage", "open_project", "open_run"}:
+            folder = storage_root() if name == "open_storage" else output_root()
+            if name in {"open_project", "open_run"}:
                 folder = project_folder(folder, body["project_id"])
             if name == "open_run":
                 record = next((item for item in read_runs(output_root(), body["project_id"])
@@ -85,11 +91,18 @@ class DesktopService:
     def save(self, body):
         key = body.get("api_key", "").strip() or self.key
         model = body.get("model", self.model)
+        language = body.get("output_language", self.output_language)
+        if language not in {"auto", "zh-CN", "en"}:
+            raise ValueError("请选择支持的任务输出语言。")
         template = (runtime_root() / "dispatch.deepseek-codex.example.yaml").read_text(encoding="utf-8")
         config = make_config(template, key, model)
+        config = config.replace("output_language: zh-CN", f"output_language: {language}")
         data_root().mkdir(parents=True, exist_ok=True)
-        (data_root() / "dispatch.yaml").write_text(config, encoding="utf-8")
+        staged = data_root() / "dispatch.yaml.tmp"
+        staged.write_text(config, encoding="utf-8")
+        staged.replace(data_root() / "dispatch.yaml")
         self.key, self.model = key, model
+        self.output_language = language
         self.log("配置已保存，服务重新启动后生效。")
 
     @staticmethod

@@ -87,7 +87,7 @@ def run_explore_task(
                 return "unhealthy"
 
         prompt = render_prompt(
-            load_prompt(config.runtime.prompt_group, "explore.md"),
+            load_prompt(config.runtime.prompt_group, "explore.md", config.runtime.output_language),
             {
                 "graph_yaml": write_graph_snapshot_reference(
                     container_manager,
@@ -291,7 +291,7 @@ def _try_conclude_fallback(
     container_name = container_manager.ensure_running(project_id)
 
     prompt = render_prompt(
-        load_prompt(config.runtime.prompt_group, "explore_conclude.md"),
+        load_prompt(config.runtime.prompt_group, "explore_conclude.md", config.runtime.output_language),
         {
             "graph_yaml": write_graph_snapshot_reference(
                 container_manager,

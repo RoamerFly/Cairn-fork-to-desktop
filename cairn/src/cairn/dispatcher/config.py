@@ -172,6 +172,7 @@ class RuntimeConfig(BaseModel):
     worker_healthcheck: WorkerHealthcheckMode = "startup_only"
     execution: ExecutionMode = "container"
     prompt_group: str = Field(min_length=1)
+    output_language: Literal["auto", "zh-CN", "en"] = "auto"
 
 
 class WorkerConfig(BaseModel):
