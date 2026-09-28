@@ -5,6 +5,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from cairn.dispatcher.config import DispatchConfig, WorkerConfig
 from cairn.dispatcher.protocol.client import CairnClient
@@ -83,6 +84,7 @@ def run_worker_process(
     timeout_seconds: int,
     lease: HeartbeatLease | None = None,
     cancellation: TaskCancellation | None = None,
+    intent_id: str | None = None,
 ) -> ProcessResult:
     LOG.info(
         "starting container exec container=%s worker=%s phase=%s timeout=%ss",
@@ -97,6 +99,8 @@ def run_worker_process(
         argv,
         timeout_seconds=timeout_seconds,
     )
+    started_at = datetime.now(timezone.utc).isoformat()
+    started = time.monotonic()
     process.start()
     if lease is not None:
         lease.attach_process(process)
@@ -104,7 +108,11 @@ def run_worker_process(
         cancellation.attach_process(process)
     try:
         result = process.communicate(timeout=communicate_timeout(timeout_seconds))
-        archive_worker_result(container_manager, container_name, worker, argv, phase, result)
+        archive_worker_result(
+            container_manager, container_name, worker, argv, phase, result,
+            intent_id=intent_id, started_at=started_at,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
         return result
     finally:
         if lease is not None:
@@ -120,6 +128,10 @@ def archive_worker_result(
     argv: list[str],
     phase: str,
     result: ProcessResult,
+    *,
+    intent_id: str | None = None,
+    started_at: str | None = None,
+    duration_ms: int | None = None,
 ) -> None:
     root = getattr(container_manager, "artifact_root", lambda: None)()
     if not root:
@@ -140,6 +152,10 @@ def archive_worker_result(
         "timed_out": result.timed_out,
         "cancelled": result.cancelled,
         "cancel_reason": result.cancel_reason,
+        "intent_id": intent_id,
+        "started_at": started_at,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "duration_ms": duration_ms,
     }
     try:
         for name, content in (

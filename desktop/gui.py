@@ -34,6 +34,7 @@ from core import (
     storage_root,
 )
 from single_instance import SingleInstance
+from graph_view import GraphPage
 
 
 COLORS = {
@@ -79,6 +80,9 @@ class CairnDesktop(ctk.CTk):
         self._build_shell()
         self._build_overview()
         self._build_mission()
+        self.graph_page = GraphPage(self.content, data=self.data, output=output_root(), colors=COLORS, font=FONT)
+        self.graph_page.grid(row=0, column=0, sticky="nsew")
+        self._pages["graph"] = self.graph_page
         self._build_activity()
         self._build_about()
         self.show_page("overview")
@@ -156,6 +160,7 @@ class CairnDesktop(ctk.CTk):
         for page, label, glyph in (
             ("overview", "总览", "⌂"),
             ("mission", "新建任务", "+"),
+            ("graph", "任务过程图", "◇"),
             ("activity", "运行日志", "▥"),
         ):
             button = ctk.CTkButton(
@@ -228,6 +233,8 @@ class CairnDesktop(ctk.CTk):
                 fg_color=COLORS["selected"] if selected else "transparent",
                 text_color=COLORS["accent"] if selected else COLORS["muted"],
             )
+        if name == "graph":
+            self.graph_page.refresh()
 
     def _page_header(self, page, title: str, subtitle: str, action: tuple[str, object] | None = None):
         header = ctk.CTkFrame(page, fg_color="transparent")
@@ -424,7 +431,7 @@ class CairnDesktop(ctk.CTk):
         card = self._card(page)
         card.pack(fill="x", padx=25)
         details = (
-            ("应用版本", "0.3.0"),
+            ("应用版本", "0.4.0"),
             ("Cairn 核心", "0.2.1"),
             ("开发者", "RoamerFly"),
             ("运行方式", "Codex Worker · DeepSeek API · Docker Desktop"),
@@ -587,7 +594,15 @@ class CairnDesktop(ctk.CTk):
         self._write_config(api_key, model)
         if not self._check_status():
             raise RuntimeError("Docker Linux 引擎尚未就绪，请先启动 Docker Desktop。")
-        self._run_command(["docker", "pull", "--platform=linux/amd64", WORKER_IMAGE])
+        installed = subprocess.run(
+            ["docker", "image", "inspect", WORKER_IMAGE], capture_output=True,
+            creationflags=CREATE_NO_WINDOW, timeout=15,
+        )
+        if installed.returncode == 0:
+            self._emit("log", "复用已安装的 Worker 镜像。")
+        else:
+            self._emit("log", "首次使用需要下载 Worker 工具环境，下载后会缓存复用。")
+            self._run_command(["docker", "pull", "--platform=linux/amd64", WORKER_IMAGE])
         self._run_command(self._compose("up", "-d", "--build", "--force-recreate"))
         self._emit("log", "Cairn 已启动。可打开网页控制台或创建任务。")
         self._check_status()
@@ -676,7 +691,7 @@ class CairnDesktop(ctk.CTk):
         self._emit("info", f"任务已创建：{data.get('id', '')}\n调度器将自动执行。")
 
 
-def main() -> None:
+def main(initial_page: str = "overview") -> None:
     ctk.set_appearance_mode("dark")
     single = SingleInstance(APP_TITLE)
     if single.already_running:
@@ -685,6 +700,7 @@ def main() -> None:
         return
     try:
         app = CairnDesktop()
+        app.show_page(initial_page)
         app.mainloop()
     finally:
         single.close()

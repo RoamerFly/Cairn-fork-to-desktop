@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import argparse
 import subprocess
 import tempfile
 import time
@@ -19,6 +20,10 @@ TITLE = "Cairn 桌面控制中心"
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--graph", action="store_true")
+    parser.add_argument("--storage", type=Path)
+    args = parser.parse_args()
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
     user32.FindWindowW.restype = wintypes.HWND
@@ -29,9 +34,12 @@ def main() -> None:
     user32.GetWindowRect.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.RECT))
     user32.GetWindowRect.restype = wintypes.BOOL
     with tempfile.TemporaryDirectory(prefix="cairn-visual-smoke-") as profile:
+        environment = {**os.environ, "LOCALAPPDATA": profile}
+        if args.storage:
+            environment["CAIRN_DESKTOP_STORAGE_ROOT"] = str(args.storage.resolve())
         process = subprocess.Popen(
-            ["python", str(ROOT / "desktop" / "gui.py")],
-            env={**os.environ, "LOCALAPPDATA": profile},
+            ["python", "-c", "import gui; gui.main('graph')"] if args.graph else ["python", str(ROOT / "desktop" / "gui.py")],
+            cwd=ROOT / "desktop", env=environment,
         )
         try:
             for _ in range(60):
@@ -44,6 +52,8 @@ def main() -> None:
             else:
                 raise RuntimeError("GUI window not found")
             time.sleep(7)
+            if process.poll() is not None:
+                raise RuntimeError(f"GUI exited before capture with status {process.returncode}")
             window = user32.FindWindowW(None, TITLE)
             user32.ShowWindow(window, 9)
             user32.SetForegroundWindow(window)
