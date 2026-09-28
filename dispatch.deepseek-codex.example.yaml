@@ -1,5 +1,5 @@
 # Copy this file to dispatch.yaml and replace the API key placeholder.
-# Used with the repository's docker-compose.yaml on Docker Desktop (Linux containers).
+# Used with desktop/cairn-desktop.compose.yaml on Docker Desktop (Linux containers).
 # DeepSeek Responses API: https://api-docs.deepseek.com/guides/responses_api/
 server: "http://cairn-server:8000"
 
@@ -28,6 +28,7 @@ container:
   image: "ghcr.io/oritera/cairn-worker-container:latest"
   network_mode: "bridge"
   completed_action: stop
+  persistence_root: "/cairn/agent-output"
 
 workers:
   - name: "codex-deepseek"

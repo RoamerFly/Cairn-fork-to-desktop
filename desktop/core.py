@@ -30,8 +30,8 @@ def storage_root() -> Path:
     override = os.environ.get("CAIRN_DESKTOP_STORAGE_ROOT")
     if override:
         return Path(override).expanduser().resolve()
-    if getattr(sys, "frozen", False) and (Path(sys.executable).parent / "portable.flag").is_file():
-        return Path(sys.executable).parent / "CairnDesktopData"
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "CairnDesktopData"
     base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
     return base / "CairnDesktop"
 
@@ -44,21 +44,26 @@ def data_root() -> Path:
     return storage_root() / "data"
 
 
+def output_root() -> Path:
+    return storage_root() / "output"
+
+
 def migrate_legacy_storage(root: Path) -> None:
-    """Copy user state from the first desktop build, leaving old data untouched."""
-    legacy = root / "runtime"
+    """Copy old AppData or runtime state into the sidecar without overwriting it."""
     data = root / "data"
-    if not legacy.is_dir():
-        return
-    data.mkdir(parents=True, exist_ok=True)
-    old_config = legacy / "dispatch.yaml"
-    new_config = data / "dispatch.yaml"
-    if old_config.is_file() and not new_config.exists():
-        shutil.copy2(old_config, new_config)
-    old_database = legacy / "datas" / "cairn"
-    new_database = data / "cairn"
-    if old_database.is_dir() and not new_database.exists():
-        shutil.copytree(old_database, new_database)
+    old_root = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "CairnDesktop"
+    candidates = (
+        (root / "runtime" / "dispatch.yaml", root / "runtime" / "datas" / "cairn"),
+        (old_root / "data" / "dispatch.yaml", old_root / "data" / "cairn"),
+        (old_root / "runtime" / "dispatch.yaml", old_root / "runtime" / "datas" / "cairn"),
+    )
+    for old_config, old_database in candidates:
+        if old_config.is_file() and not (data / "dispatch.yaml").exists():
+            data.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(old_config, data / "dispatch.yaml")
+        if old_database.is_dir() and not (data / "cairn").exists():
+            data.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(old_database, data / "cairn")
 
 
 def ensure_runtime(payload: Path, destination: Path) -> None:

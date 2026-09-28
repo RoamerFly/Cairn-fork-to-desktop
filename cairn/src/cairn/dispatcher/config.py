@@ -155,6 +155,7 @@ class ContainerConfig(BaseModel):
     network_mode: str
     completed_action: CompletedAction
     cap_add: list[str] = Field(default_factory=list)
+    persistence_root: str | None = None
 
 
 class LocalConfig(BaseModel):

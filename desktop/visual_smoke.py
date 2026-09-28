@@ -24,6 +24,8 @@ def main() -> None:
     user32.FindWindowW.restype = wintypes.HWND
     user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
     user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+    user32.ShowWindow.restype = wintypes.BOOL
     user32.GetWindowRect.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.RECT))
     user32.GetWindowRect.restype = wintypes.BOOL
     with tempfile.TemporaryDirectory(prefix="cairn-visual-smoke-") as profile:
@@ -41,8 +43,11 @@ def main() -> None:
                 time.sleep(0.2)
             else:
                 raise RuntimeError("GUI window not found")
-            user32.SetForegroundWindow(window)
             time.sleep(7)
+            window = user32.FindWindowW(None, TITLE)
+            user32.ShowWindow(window, 9)
+            user32.SetForegroundWindow(window)
+            time.sleep(1)
             try:
                 screenshot = ImageGrab.grab(window=window)
             except OSError:
@@ -52,6 +57,8 @@ def main() -> None:
                 screenshot = ImageGrab.grab(
                     bbox=(rect.left, rect.top, rect.right, rect.bottom), all_screens=True
                 )
+            if screenshot.width < 500 or screenshot.height < 300 or screenshot.getbbox() is None:
+                raise RuntimeError("GUI capture is empty or minimized")
             screenshot.save(OUTPUT)
         finally:
             process.terminate()

@@ -28,6 +28,7 @@ from core import (
     load_saved_settings,
     make_config,
     migrate_legacy_storage,
+    output_root,
     runtime_root,
     server_available,
     storage_root,
@@ -304,7 +305,7 @@ class CairnDesktop(ctk.CTk):
         save = self._button(key_row, "保存", self.save_config, primary=True, width=85, height=45)
         save.grid(row=0, column=2, padx=(8, 0))
         self._action_buttons.append(save)
-        self._label(model_card, "密钥仅保存在本机用户目录", size=12, color=COLORS["muted"]).grid(
+        self._label(model_card, "密钥保存在 EXE 同级的数据目录", size=12, color=COLORS["muted"]).grid(
             row=5, column=0, sticky="w", padx=23, pady=(7, 0)
         )
 
@@ -412,7 +413,10 @@ class CairnDesktop(ctk.CTk):
         self._label(header, "最多保留最近 2000 行", size=12, color=COLORS["dim"]).pack(side="right")
         self.full_log = self._new_log_box(card, height=520)
         self.full_log.pack(fill="both", expand=True, padx=16, pady=(0, 16))
-        self._button(page, "打开数据目录", self.open_runtime, width=150).pack(anchor="w", padx=25, pady=(0, 20))
+        folders = ctk.CTkFrame(page, fg_color="transparent")
+        folders.pack(anchor="w", padx=25, pady=(0, 20))
+        self._button(folders, "打开任务文件", self.open_output, width=150).pack(side="left", padx=(0, 10))
+        self._button(folders, "打开数据目录", self.open_runtime, width=150).pack(side="left")
 
     def _build_about(self) -> None:
         page = self._new_page("about")
@@ -420,11 +424,12 @@ class CairnDesktop(ctk.CTk):
         card = self._card(page)
         card.pack(fill="x", padx=25)
         details = (
-            ("应用版本", "0.2.0"),
+            ("应用版本", "0.3.0"),
             ("Cairn 核心", "0.2.1"),
             ("开发者", "RoamerFly"),
             ("运行方式", "Codex Worker · DeepSeek API · Docker Desktop"),
             ("数据目录", str(storage_root())),
+            ("任务过程文件", str(output_root())),
         )
         for index, (label, value) in enumerate(details):
             line = ctk.CTkFrame(card, fg_color="transparent")
@@ -530,8 +535,10 @@ class CairnDesktop(ctk.CTk):
         migrate_legacy_storage(storage_root())
         ensure_runtime(bundled_payload(), self.runtime)
         self.data.mkdir(parents=True, exist_ok=True)
+        output_root().mkdir(parents=True, exist_ok=True)
         self._emit("ready", load_saved_settings(self.data / "dispatch.yaml"))
         self._emit("log", f"本地工作区：{storage_root()}")
+        self._emit("log", f"任务过程文件：{output_root()}")
         self._check_status()
 
     def _check_status(self) -> bool:
@@ -625,6 +632,10 @@ class CairnDesktop(ctk.CTk):
     def open_runtime(self) -> None:
         storage_root().mkdir(parents=True, exist_ok=True)
         os.startfile(storage_root())
+
+    def open_output(self) -> None:
+        output_root().mkdir(parents=True, exist_ok=True)
+        os.startfile(output_root())
 
     def create_project(self) -> None:
         title = self.title_var.get().strip()

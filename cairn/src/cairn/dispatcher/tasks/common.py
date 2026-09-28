@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import time
 import uuid
 from dataclasses import dataclass
@@ -60,7 +61,9 @@ def write_graph_snapshot_reference(
     *,
     phase: str,
 ) -> str:
-    path = f"{GRAPH_SNAPSHOT_ROOT}/{phase}-{uuid.uuid4().hex[:12]}/graph.yaml"
+    root = getattr(container_manager, "artifact_root", lambda: None)()
+    snapshot_root = f"{root}/prompts" if root else GRAPH_SNAPSHOT_ROOT
+    path = f"{snapshot_root}/{phase}-{uuid.uuid4().hex[:12]}/graph.yaml"
     container_manager.write_text_file(container_name, path, graph_yaml)
     return (
         "The graph YAML snapshot is stored in this file inside the current container:\n\n"
@@ -100,12 +103,53 @@ def run_worker_process(
     if cancellation is not None:
         cancellation.attach_process(process)
     try:
-        return process.communicate(timeout=communicate_timeout(timeout_seconds))
+        result = process.communicate(timeout=communicate_timeout(timeout_seconds))
+        archive_worker_result(container_manager, container_name, worker, argv, phase, result)
+        return result
     finally:
         if lease is not None:
             lease.attach_process(None)
         if cancellation is not None:
             cancellation.attach_process(None)
+
+
+def archive_worker_result(
+    container_manager: ContainerManager,
+    container_name: str,
+    worker: WorkerConfig,
+    argv: list[str],
+    phase: str,
+    result: ProcessResult,
+) -> None:
+    root = getattr(container_manager, "artifact_root", lambda: None)()
+    if not root:
+        return
+    directory = f"{root}/runs/{phase}-{uuid.uuid4().hex[:12]}"
+    secrets = [value for key, value in worker.env.items() if any(token in key.upper() for token in ("KEY", "TOKEN", "PASSWORD")) and value]
+
+    def redact(text: str) -> str:
+        for secret in secrets:
+            text = text.replace(secret, "[REDACTED]")
+        return text
+
+    metadata = {
+        "worker": worker.name,
+        "phase": phase,
+        "argv": argv,
+        "returncode": result.returncode,
+        "timed_out": result.timed_out,
+        "cancelled": result.cancelled,
+        "cancel_reason": result.cancel_reason,
+    }
+    try:
+        for name, content in (
+            ("task.json", json.dumps(metadata, ensure_ascii=False, indent=2)),
+            ("stdout.log", result.stdout),
+            ("stderr.log", result.stderr),
+        ):
+            container_manager.write_text_file(container_name, f"{directory}/{name}", redact(content))
+    except Exception as exc:
+        LOG.warning("could not archive worker process container=%s phase=%s error=%s", container_name, phase, exc)
 
 
 def project_allows_conclude_fallback(client: CairnClient, project_id: str, *, worker_name: str, intent_id: str) -> bool:

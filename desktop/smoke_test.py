@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +30,10 @@ def main() -> None:
     payload = ROOT / "desktop" / "build" / "cairn-runtime.zip"
     with tempfile.TemporaryDirectory(prefix="cairn-desktop-smoke-") as temporary:
         base = Path(temporary)
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(base)}), \
+             patch.object(launcher.sys, "frozen", True, create=True), \
+             patch.object(launcher.sys, "executable", str(EXE)):
+            assert launcher.storage_root() == EXE.parent / "CairnDesktopData"
         runtime = base / "CairnDesktop" / "app"
         data = base / "CairnDesktop" / "data"
         launcher.ensure_runtime(payload, runtime)
@@ -46,6 +51,11 @@ def main() -> None:
         assert launcher.load_saved_settings(data / "dispatch.yaml") == ("sk-test-value", "deepseek-flash")
         assert (data / "cairn" / "cairn.db").read_bytes() == b"legacy"
         assert (legacy / "datas" / "cairn" / "cairn.db").is_file()
+        sidecar = base / "sidecar"
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(base)}):
+            launcher.migrate_legacy_storage(sidecar)
+        assert launcher.load_saved_settings(sidecar / "data" / "dispatch.yaml") == ("sk-test-value", "deepseek-flash")
+        assert (sidecar / "data" / "cairn" / "cairn.db").read_bytes() == b"legacy"
         subprocess.run(
             ["docker", "compose", "-f", "compose.yaml", "config", "--quiet"],
             cwd=runtime,
@@ -58,7 +68,11 @@ def main() -> None:
         fresh_profile = base / "fresh-profile"
         fresh_profile.mkdir()
         exe_runtime = fresh_profile / "CairnDesktop" / "app"
-        environment = {**os.environ, "LOCALAPPDATA": str(fresh_profile)}
+        environment = {
+            **os.environ,
+            "LOCALAPPDATA": str(fresh_profile),
+            "CAIRN_DESKTOP_STORAGE_ROOT": str(fresh_profile / "CairnDesktop"),
+        }
         process = subprocess.Popen([str(EXE)], env=environment)
         try:
             for _ in range(80):
