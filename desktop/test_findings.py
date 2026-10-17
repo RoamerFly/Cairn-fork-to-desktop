@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from findings import generate_finding, read_finding
+from findings import _normalize, generate_finding, read_finding
 from graph_data import read_runs
 
 
@@ -35,6 +35,17 @@ class _Response:
 
 
 class FindingTests(unittest.TestCase):
+    def test_normalize_does_not_silently_drop_findings_or_evidence(self):
+        long_text = "证据" * 2000
+        result = _normalize({"findings": [{"title": str(i), "summary": long_text,
+            "evidence": [f"e{n}" for n in range(21)],
+            "reproduction": [{"action": f"step {n}", "expected": "ok"} for n in range(21)]}
+            for i in range(13)]})
+        self.assertEqual(len(result), 13)
+        self.assertEqual(result[0]["summary"], long_text)
+        self.assertEqual(len(result[0]["evidence"]), 21)
+        self.assertEqual(len(result[0]["reproduction"]), 21)
+
     def test_generate_persists_card_and_usage_and_invalidates_on_fact_change(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"CAIRN_DESKTOP_STORAGE_ROOT": folder}):
             detail = {"facts": [{"id": "f1", "description": "GET /example returned HTTP 200"}],

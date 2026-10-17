@@ -45,7 +45,7 @@ class WebHostTests(unittest.TestCase):
     def test_original_ui_assets_and_graph_are_embedded(self):
         shell = self.get("/").decode()
         graph = self.get("/graph").decode()
-        self.assertIn("0.7.0", shell)
+        self.assertIn("0.8.0", shell)
         self.assertIn('id="settings-tab"', shell)
         self.assertIn('id="shutdown-overlay"', shell)
         self.assertTrue(self.get("/desktop-icons/cairn.ico").startswith(b'\x00\x00\x01\x00'))
@@ -106,6 +106,19 @@ class WebHostTests(unittest.TestCase):
         self.assertEqual(preferences["layout_mode"], "elk_lr")
         self.assertEqual(preferences["sidePanelWidth"], 450)
         self.assertTrue((self.fixture.root / "data" / "ui.json").is_file())
+
+    def test_graph_preference_save_does_not_reset_close_choice(self):
+        url = self.host.url + "/desktop/preferences"
+        def put(body):
+            request = urllib.request.Request(url, method="PUT", data=json.dumps(body).encode(),
+                headers={"X-Cairn-Token": self.host.token, "Content-Type": "application/json"})
+            with urllib.request.urlopen(request) as response:
+                return json.load(response)
+        put({"remember_close": True, "close_behavior": "tray"})
+        saved = put({"layout_mode": "dagre_lr", "sidePanelWidth": 500})
+        self.assertTrue(saved["remember_close"])
+        self.assertEqual(saved["close_behavior"], "tray")
+        self.assertEqual(saved["layout_mode"], "dagre_lr")
 
     def test_finding_cache_is_read_only_and_generation_requires_token(self):
         path = "/desktop/projects/p1/findings/f1"

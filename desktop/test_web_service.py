@@ -1,14 +1,18 @@
 """Desktop control operations with fake Docker calls and no external requests."""
 
 import os
+import json
 import subprocess
 import shutil
+import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from core import data_root, runtime_root
+from core import WORKER_IMAGE, data_root, runtime_root
 from web_service import DesktopService
 
 
@@ -33,8 +37,10 @@ class DesktopServiceTests(unittest.TestCase):
             state = self.service.status()
         self.assertNotIn("sk-fixture-secret", str(state))
         self.assertTrue(state["key_configured"])
+        self.assertIsNone(self.service.status(state["log_revision"])["logs"])
         self.assertEqual(state["model"], "deepseek-v4-pro")
         self.assertIn("sk-fixture-secret", (data_root() / "dispatch.yaml").read_text())
+        self.assertIn(WORKER_IMAGE, (data_root() / "dispatch.yaml").read_text())
         self.service.log("sk-fixture-secret should be removed")
         self.assertIn("[API KEY]", self.service.logs[-1])
 
@@ -50,16 +56,26 @@ class DesktopServiceTests(unittest.TestCase):
 
     def test_start_reuses_image_and_only_pulls_if_missing(self):
         body = {"api_key": "sk-fixture-secret", "model": "deepseek-flash"}
+        checks = [0]
+        def checked():
+            checks[0] += 1
+            self.service.docker = (True, "ready")
+            self.service.server_owned = checks[0] >= 3
+            self.service.compose_running = self.service.server_owned
+            self.service.foreign_server = False
         with patch("web_service.docker_available", return_value=(True, "ready")), \
-             patch("web_service.server_available", side_effect=[False, True]), \
+             patch("web_service.server_available", return_value=True), \
              patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout="")), \
+             patch.object(self.service, "check", side_effect=checked), \
              patch.object(self.service, "command") as command:
             self.service.start(body)
             self.assertEqual(command.call_count, 1)
             self.assertIn("up", command.call_args.args[0])
+        checks[0] = 0
         with patch("web_service.docker_available", return_value=(True, "ready")), \
-             patch("web_service.server_available", side_effect=[False, True]), \
+             patch("web_service.server_available", return_value=True), \
              patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 1, stdout="")), \
+             patch.object(self.service, "check", side_effect=checked), \
              patch.object(self.service, "command") as command:
             self.service.start(body)
             self.assertEqual(command.call_count, 2)
@@ -87,6 +103,76 @@ class DesktopServiceTests(unittest.TestCase):
              patch.object(self.service, "command") as command:
             self.service.stop()
         command.assert_not_called()
+
+    def test_control_log_persists_and_redacts_key(self):
+        self.service.save({"api_key": "sk-fixture-secret"})
+        self.service.log("key sk-fixture-secret")
+        restored = DesktopService()
+        self.assertIn("[API KEY]", restored.logs[-2])
+        self.assertNotIn("sk-fixture-secret", restored.log_path.read_text(encoding="utf-8"))
+
+    def test_second_stop_click_is_rejected_without_extra_log(self):
+        before = list(self.service.logs)
+        result = self.service.action("stop", {})
+        self.assertFalse(result["accepted"])
+        self.assertEqual(list(self.service.logs), before)
+
+    def test_foreign_server_is_never_stopped(self):
+        with patch("web_service.docker_available", return_value=(True, "ready")), \
+             patch("web_service.server_available", return_value=True), \
+             patch("web_service.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout="")), \
+             patch.object(self.service, "command") as command:
+            self.service.stop()
+            self.assertTrue(self.service.foreign_server)
+        command.assert_not_called()
+
+    def test_compose_identity_must_match_this_runtime(self):
+        def docker_run(args, **_kwargs):
+            if "ps" in args:
+                return subprocess.CompletedProcess(args, 0, stdout="container-1\n")
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps({
+                "com.docker.compose.project.working_dir": str(runtime_root()),
+                "com.docker.compose.service": "cairn-server"}).encode())
+        with patch("web_service.docker_available", return_value=(True, "ready")), \
+             patch("web_service.server_available", return_value=True), \
+             patch("web_service.subprocess.run", side_effect=docker_run):
+            self.service.check()
+        self.assertTrue(self.service.compose_running)
+        self.assertTrue(self.service.server_owned)
+        self.assertFalse(self.service.foreign_server)
+        with patch("web_service.docker_available", return_value=(True, "ready")), \
+             patch("web_service.server_available", return_value=True), \
+             patch("web_service.subprocess.run", side_effect=lambda args, **kwargs:
+                   subprocess.CompletedProcess(args, 0, stdout="container-1\n" if "ps" in args else
+                                               b'{"com.docker.compose.project.working_dir":"C:\\\\old-app","com.docker.compose.service":"cairn-server"}')):
+            self.service.check()
+        self.assertFalse(self.service.compose_running)
+        self.assertTrue(self.service.foreign_server)
+
+    def test_command_timeout_stops_unresponsive_process(self):
+        started = time.monotonic()
+        with self.assertRaisesRegex(RuntimeError, "超过 1 秒"):
+            self.service.command([sys.executable, "-c", "import time; time.sleep(30)"], timeout=1)
+        self.assertLess(time.monotonic() - started, 12)
+        self.assertIsNone(self.service.command_process)
+
+    def test_cancel_state_clears_before_next_operation(self):
+        entered = threading.Event()
+        release = threading.Event()
+        def check():
+            entered.set()
+            release.wait(5)
+        with patch.object(self.service, "check", side_effect=check):
+            self.service.action("check", {})
+            self.assertTrue(entered.wait(2))
+            self.service.cancel_operation()
+            self.assertTrue(self.service.cancel_requested.is_set())
+            release.set()
+            deadline = time.monotonic() + 3
+            while self.service.busy and time.monotonic() < deadline:
+                time.sleep(0.01)
+        self.assertFalse(self.service.busy)
+        self.assertFalse(self.service.cancel_requested.is_set())
 
 
 if __name__ == "__main__":

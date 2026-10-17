@@ -76,10 +76,15 @@ def install_window_lifecycle(window, host, icon_path: Path) -> None:
         execute_script("window.showCloseProgress && window.showCloseProgress()")
         def shutdown():
             try:
-                # Finish a control operation already in progress before stopping
-                # the Compose services, so an image pull/build cannot race stop.
-                while host.service.busy:
+                # Cancel a pull/build before stopping services. Do not leave the
+                # shutdown dialog waiting forever for an unresponsive command.
+                if host.service.busy:
+                    host.service.cancel_operation()
+                deadline = time.monotonic() + 20
+                while host.service.busy and time.monotonic() < deadline:
                     time.sleep(0.25)
+                if host.service.busy:
+                    raise RuntimeError("当前操作在 20 秒内未停止。请检查运行日志。")
                 if exiting.is_set():
                     return
                 host.service.stop()

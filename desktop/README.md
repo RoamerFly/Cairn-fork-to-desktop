@@ -1,6 +1,6 @@
 # Cairn Windows 桌面版
 
-`CairnDesktop.exe` 0.7.0 是 Cairn 的单文件 Windows 桌面控制台，用于配置和运行 Docker 中的 Cairn 服务及 Codex Worker。图界面直接复用原项目的 HTML、Cytoscape、Dagre/Klay/ELK 布局与 Alpine 交互，通过 WebView2 放进同一个桌面窗口；控制中心与常用图操作使用中文。程序内含 Cairn 源码、锁文件、Dockerfile、Compose 配置和 DeepSeek/Codex 配置模板。目标电脑无需另装 Python，但需要 Microsoft Edge WebView2 Runtime；执行任务仍需要 Docker Desktop 运行 Linux 容器。Windows 命名互斥量保证界面只运行一个实例，重复打开会切回已打开的窗口。
+`CairnDesktop.exe` 0.8.0 是 Cairn 的单文件 Windows 桌面控制台，用于配置和运行 Docker 中的 Cairn 服务及 Codex Worker。图界面直接复用原项目的 HTML、Cytoscape、Dagre/Klay/ELK 布局与 Alpine 交互，通过 WebView2 放进同一个桌面窗口；控制中心与常用图操作使用中文。程序内含 Cairn 源码、锁文件、Dockerfile、Compose 配置和 DeepSeek/Codex 配置模板。目标电脑无需另装 Python，但需要 Microsoft Edge WebView2 Runtime；执行任务仍需要 Docker Desktop 运行 Linux 容器。Windows 命名互斥量保证界面只运行一个实例，重复打开会切回已打开的窗口。
 
 首次启动时，EXE 同级会自动创建 `CairnDesktopData`：`app` 保存解压的运行文件，`data` 保存配置与 SQLite 数据库，`output/<项目 ID>/workspace` 保存 Agent 的工作文件，`output/<项目 ID>/codex` 保存 Codex 会话。DeepSeek API Key 以明文保存在 `CairnDesktopData\data\dispatch.yaml`，不会被打包进 EXE。控制中心不回传已保存密钥；输入框留空会复用本机配置。`data/ui.json` 保存图布局和面板宽度，`data/webview` 保存浏览器运行数据。旧版 `%LOCALAPPDATA%\CairnDesktop` 的配置和数据库会复制到新目录，旧文件保留。请把 EXE 放在可写目录；复制 EXE 时连同 `CairnDesktopData` 一起复制即可迁移状态。可用 `CAIRN_DESKTOP_STORAGE_ROOT` 覆盖存储根目录。Cairn API 服务仅监听 `127.0.0.1:8000`；桌面 UI 使用独立的随机本地端口，只绑定回环地址。
 
@@ -28,7 +28,11 @@ Worker 镜像提供 Kali Linux、命令行工具、浏览器依赖、资料库�
 
 本机模式的成本与推荐方案见 [本机执行改造方案](LOCAL_MODE_PLAN.md)。0.5.0 调整的是桌面 UI，执行端仍为 Docker。
 
-## 设置与运行（0.7.0）
+## 设置与运行（0.8.0）
+
+0.8.0 修正了图页布局保存覆盖“记住关闭方式”的问题；各设置项只更新自己的字段。控制日志写入 EXE 同级 `CairnDesktopData/logs/desktop.log`，超过 2 MB 时轮转到 `desktop.previous.log`，重启后仍可查看与复制。状态轮询只在日志变化时更新文本，避免打断鼠标选区。构建、拉取和停止命令设有超时，控制中心可取消当前操作；退出会先取消正在运行的控制操作，再停止本目录的服务。若 8000 端口属于其他位置的服务，程序会显示占用状态，不会误停该服务。Worker 镜像固定到已验证的摘要，避免 `latest` 在不同机器上指向不同内容。运行时更新先解压到临时目录再替换，失败时保留旧版本。
+
+核心本机执行路径现支持 Windows 进程树终止，Pi 使用系统原生会话目录（可用 `CAIRN_LOCAL_SESSION_ROOT` 指定）；桌面控制中心仍采用 Docker 模式。结构化漏洞结果不再静默裁剪发现数量、证据、步骤或长字段，并显示整理时间、模型及过期提示。结果来自模型整理，只能以原始事实和执行记录为依据核对。
 
 顶部“设置”页集中管理 DeepSeek 密钥、模型、任务输出语言、图布局、人工操作名称、详情面板宽度和本机存储入口。密钥留空时复用已保存配置，不回传到页面；图偏好保存后立即应用。模型与语言保存后需通过“构建并启动”重新启动服务，运行中的任务请先完成或停止。
 
@@ -71,6 +75,7 @@ python desktop/test_findings.py
 python desktop/test_web_host.py
 python desktop/test_web_service.py
 python desktop/webview_smoke.py
+python -m pytest desktop cairn/tests -q
 ```
 
 冒烟测试覆盖运行包解压、配置生成、旧数据迁移、Compose 配置和 EXE 单实例行为。图数据测试覆盖只读查询、分支汇合、未完成目标、循环数据和节点日志关联。HTTP 测试覆盖原资源、离线查询/快照、节点归档、界面偏好及请求边界。WebView2 测试在真实桌面窗口中检查连线点击、节点日志、Dagre/Klay/ELK、回放及刷新保留视角；测试通过 WebView2 的自身截图接口捕获应用内容，不读取其他窗口。历史任务截图使用 `python desktop/webview_smoke.py --storage desktop/dist_windows/CairnDesktopData`，只读取已有任务，不运行新任务。输出截图仅用于本地检查，不提交到仓库。

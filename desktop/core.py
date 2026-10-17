@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import uuid
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -15,7 +16,7 @@ from zipfile import ZipFile
 
 
 APP_TITLE = "Cairn 桌面控制中心"
-WORKER_IMAGE = "ghcr.io/oritera/cairn-worker-container:latest"
+WORKER_IMAGE = "ghcr.io/oritera/cairn-worker-container@sha256:d90d40b7c634b8d5dc9464e04b863a185b9efe964ffd2b246f6e5cbc2a2ef053"
 SERVER_URL = "http://127.0.0.1:8000"
 PLACEHOLDER = "REPLACE_WITH_YOUR_DEEPSEEK_API_KEY"
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -71,19 +72,42 @@ def ensure_runtime(payload: Path, destination: Path) -> None:
     stamp = destination / ".payload-sha256"
     if stamp.exists() and stamp.read_text(encoding="ascii") == digest:
         return
-    destination.mkdir(parents=True, exist_ok=True)
-    with ZipFile(payload) as archive:
-        for member in archive.infolist():
-            target = (destination / member.filename).resolve()
-            if not target.is_relative_to(destination.resolve()):
-                raise ValueError("Invalid bundled file path")
-            if member.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(member) as source, target.open("wb") as output:
-                    shutil.copyfileobj(source, output)
-    stamp.write_text(digest, encoding="ascii")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    suffix = uuid.uuid4().hex
+    stage = destination.parent / f".{destination.name}.stage-{suffix}"
+    backup = destination.parent / f".{destination.name}.backup-{suffix}"
+    try:
+        stage.mkdir()
+        with ZipFile(payload) as archive:
+            for member in archive.infolist():
+                target = (stage / member.filename).resolve()
+                if not target.is_relative_to(stage.resolve()):
+                    raise ValueError("Invalid bundled file path")
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(member) as source, target.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+        (stage / ".payload-sha256").write_text(digest, encoding="ascii")
+        if destination.exists():
+            destination.replace(backup)
+        try:
+            stage.replace(destination)
+        except Exception:
+            if backup.exists():
+                backup.replace(destination)
+            raise
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+        if backup.exists() and destination.exists():
+            try:
+                shutil.rmtree(backup)
+            except OSError:
+                # The replacement is already active; a locked old file should
+                # not make the new desktop version fail to launch.
+                pass
 
 
 def make_config(template: str, api_key: str, model: str) -> str:

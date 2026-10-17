@@ -1,11 +1,11 @@
-<div x-show="desktopFindingModalOpen" class="fixed inset-0 flex items-center justify-center p-4 sm:p-6"
+<div id="desktop-finding-modal" x-show="desktopFindingModalOpen" class="fixed inset-0 flex items-center justify-center p-4 sm:p-6"
      style="display:none;z-index:9998;background:rgba(15,23,42,.65);backdrop-filter:blur(6px)"
-     @click.self="desktopFindingModalOpen=false" @keydown.escape.window="desktopFindingModalOpen=false">
+     @click.self="closeDesktopModal('finding')" @keydown.escape.window="if(desktopFindingModalOpen)closeDesktopModal('finding')" @keydown.tab="trapDesktopModalFocus($event)">
   <section role="dialog" aria-modal="true" aria-label="漏洞整理结果" class="bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
            style="width:min(1050px,96vw);height:min(780px,86vh)">
     <div class="shrink-0 px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-4">
       <div class="min-w-0"><div class="text-base font-semibold text-slate-800">漏洞整理结果</div><div class="text-xs text-slate-500 mt-1">事实 <span class="font-mono" x-text="selectedFactId()"></span> · <span x-text="`${desktopFinding.findings.length} 条发现`"></span></div></div>
-      <button type="button" @click="desktopFindingModalOpen=false" aria-label="关闭漏洞结果弹窗" class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">关闭</button>
+      <button type="button" @click="closeDesktopModal('finding')" aria-label="关闭漏洞结果弹窗" class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">关闭</button>
     </div>
     <div x-show="desktopFinding.findings.length" class="shrink-0 border-b border-slate-200 px-5 sm:px-6 pt-3 overflow-x-auto" role="tablist" aria-label="漏洞">
       <div class="flex gap-2 min-w-max">
@@ -41,6 +41,6 @@
       </div>
     </template>
     <div x-show="!desktopFinding.findings.length" class="min-h-0 flex-1 flex items-center justify-center px-6 text-sm text-slate-500 text-center">现有事实中没有足够依据确认漏洞。可查看原始事实和执行记录。</div>
-    <div class="shrink-0 px-5 sm:px-6 py-3 border-t border-slate-100 bg-white flex items-center justify-between gap-3 text-xs text-slate-400"><span>结果保存在当前任务的数据目录中。</span><button type="button" @click="desktopFindingModalOpen=false;openDesktopOriginalFact()" class="text-brand-700 font-medium hover:underline">查看原始事实 ↗</button></div>
+    <div class="shrink-0 px-5 sm:px-6 py-3 border-t border-slate-100 bg-white flex items-center justify-between gap-3 text-xs text-slate-400"><span>结果保存在当前任务的数据目录中。</span><button type="button" @click="closeDesktopModal('finding');openDesktopOriginalFact()" class="text-brand-700 font-medium hover:underline">查看原始事实 ↗</button></div>
   </section>
 </div>

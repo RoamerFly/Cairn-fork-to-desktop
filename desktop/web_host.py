@@ -21,6 +21,44 @@ from web_service import DesktopService
 
 WEB = Path(__file__).resolve().parent / "web"
 ASSETS = Path(__file__).resolve().parent / "assets"
+PREFERENCE_DEFAULTS = {"layout_mode": "klay_tb", "actor_name": "用户", "sidePanelWidth": 390,
+                       "remember_close": False, "close_behavior": "ask"}
+PREFERENCE_LOCK = threading.Lock()
+
+
+def read_preferences(path: Path) -> dict:
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    return {**PREFERENCE_DEFAULTS, **saved} if isinstance(saved, dict) else PREFERENCE_DEFAULTS.copy()
+
+
+def update_preferences(path: Path, changes: dict) -> dict:
+    with PREFERENCE_LOCK:
+        return _update_preferences(path, changes)
+
+
+def _update_preferences(path: Path, changes: dict) -> dict:
+    if not isinstance(changes, dict):
+        raise ValueError("界面偏好必须是 JSON 对象")
+    unknown = set(changes) - set(PREFERENCE_DEFAULTS)
+    if unknown:
+        raise ValueError("未知界面偏好：" + ", ".join(sorted(unknown)))
+    prefs = {**read_preferences(path), **changes}
+    if prefs["layout_mode"] not in {"klay_tb", "klay_lr", "dagre_tb", "dagre_lr", "elk_tb", "elk_lr"}:
+        raise ValueError("无效布局")
+    prefs["actor_name"] = str(prefs["actor_name"])[:100]
+    prefs["sidePanelWidth"] = max(260, min(1500, int(prefs["sidePanelWidth"])))
+    if not isinstance(prefs["remember_close"], bool) or prefs["close_behavior"] not in {"ask", "exit", "tray"}:
+        raise ValueError("无效的窗口关闭选项")
+    if not prefs["remember_close"]:
+        prefs["close_behavior"] = "ask"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staged = path.with_suffix(".tmp")
+    staged.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
+    staged.replace(path)
+    return prefs
 
 
 def normalize(detail):
@@ -79,6 +117,12 @@ class DesktopHost:
                         return self.reply(200, page, "text/html; charset=utf-8")
                     if path == "/graph" and self.command == "GET":
                         page = (owner.static / "index.html").read_text(encoding="utf-8")
+                        required = ('<!-- Detail -->', '</body>',
+                                    '<p class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words" x-text="selectedFactRecord().description"></p>',
+                                    '<p class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words" x-text="fact.description"></p>')
+                        missing = [marker for marker in required if marker not in page]
+                        if missing:
+                            return self.reply(500, {"detail": "内置图界面版本与桌面扩展不兼容；请重新构建程序。"})
                         page = page.replace('<html lang="en">', '<html lang="zh-CN">')
                         page = page.replace('x-text="project.project.status"', 'x-text="({active:\'运行中\',stopped:\'已停止\',completed:\'已完成\'})[project.project.status]"')
                         page = page.replace('${project.facts.length} facts', '${project.facts.length} 个事实')
@@ -101,33 +145,15 @@ class DesktopHost:
                             return self.reply(404, {"detail": "File not found"})
                         return self.reply(200, file.read_bytes(), mimetypes.guess_type(file)[0] or "application/octet-stream")
                     if path == "/desktop/status":
-                        return self.reply(200, owner.service.status())
+                        known = parse_qs(parsed.query).get("log_revision", [None])[0]
+                        revision = int(known) if known is not None else None
+                        return self.reply(200, owner.service.status(revision))
                     if path == "/desktop/preferences":
                         preferences = data_root() / "ui.json"
                         if self.command == "GET":
-                            defaults = {"layout_mode": "klay_tb", "actor_name": "用户",
-                                        "sidePanelWidth": 390, "remember_close": False,
-                                        "close_behavior": "ask"}
-                            saved = json.loads(preferences.read_text(encoding="utf-8")) if preferences.is_file() else {}
-                            return self.reply(200, {**defaults, **saved})
+                            return self.reply(200, read_preferences(preferences))
                         if self.command == "PUT":
-                            request = json.loads(body)
-                            mode = request.get("layout_mode", "klay_tb")
-                            if mode not in {"klay_tb", "klay_lr", "dagre_tb", "dagre_lr", "elk_tb", "elk_lr"}:
-                                raise ValueError("无效布局")
-                            prefs = {"layout_mode": mode, "actor_name": str(request.get("actor_name", "Human"))[:100],
-                                     "sidePanelWidth": max(260, min(1500, int(request.get("sidePanelWidth", 390)))),
-                                     "remember_close": bool(request.get("remember_close", False)),
-                                     "close_behavior": request.get("close_behavior", "ask")}
-                            if prefs["close_behavior"] not in {"ask", "exit", "tray"}:
-                                raise ValueError("无效的窗口关闭选项")
-                            if not prefs["remember_close"]:
-                                prefs["close_behavior"] = "ask"
-                            data_root().mkdir(parents=True, exist_ok=True)
-                            staged = preferences.with_suffix(".tmp")
-                            staged.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
-                            staged.replace(preferences)
-                            return self.reply(200, prefs)
+                            return self.reply(200, update_preferences(preferences, json.loads(body)))
                     if path == "/desktop/window" and self.command == "POST":
                         request = json.loads(body)
                         if request.get("action") == "tray" and owner.minimize_to_tray:

@@ -102,7 +102,7 @@ def main():
                     host.service.compose_running = False
                     js("status(); true")
                     wait_for("document.querySelector('[data-job=\"stop\"]').disabled")
-                js("window.__realRequest=request; window.__statusFailures=0; window.__actionDone=false; request=async(path,method,body)=>{if(path==='/desktop/status'){window.__statusFailures++;throw new Error('模拟状态故障')}if(path==='/desktop/action')return {accepted:true};return window.__realRequest(path,method,body)}; action('check').then(()=>window.__actionDone=true); true")
+                js("window.__realRequest=request; window.__statusFailures=0; window.__actionDone=false; request=async(path,method,body)=>{if(path.startsWith('/desktop/status')){window.__statusFailures++;throw new Error('模拟状态故障')}if(path==='/desktop/action')return {accepted:true};return window.__realRequest(path,method,body)}; action('check').then(()=>window.__actionDone=true); true")
                 wait_for("window.__actionDone && !jobPending", timeout=10)
                 assert js("window.__statusFailures >= 6")
                 js("request=window.__realRequest; status(); true")
@@ -149,6 +149,7 @@ def main():
                 js("Array.from(document.getElementById('graph').contentDocument.querySelectorAll('button')).find(b=>b.innerText.includes('查看结果（2 条）')).click(); true")
                 wait_for(f"{prefix}.desktopFindingModalOpen")
                 wait_for("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"漏洞整理结果\"]')?.offsetHeight > 300")
+                wait_for("document.getElementById('graph').contentDocument.activeElement?.getAttribute('aria-label') === '关闭漏洞结果弹窗'")
                 assert js(f"{prefix}.desktopSelectedFinding().title === '未授权读取测试资料'")
                 js("Array.from(document.getElementById('graph').contentDocument.querySelectorAll('[aria-label=\"漏洞内容\"] button')).find(b=>b.innerText==='复现步骤').click(); true")
                 wait_for("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"漏洞整理结果\"]')?.innerText.includes('在未登录状态请求')")
@@ -161,6 +162,7 @@ def main():
                 js(f"{prefix}.openDesktopOriginalFact(); true")
                 wait_for(f"{prefix}.desktopOriginalFactOpen")
                 wait_for("document.getElementById('graph').contentDocument.querySelector('[aria-label=\"原始事实\"]')?.offsetHeight > 300")
+                wait_for("document.getElementById('graph').contentDocument.activeElement?.getAttribute('aria-label') === '关闭原始事实弹窗'")
                 js(f"{prefix}.desktopOriginalFactText = '长记录 '.repeat(3000); true")
                 assert js("(() => {const p=document.getElementById('graph').contentDocument.querySelector('[aria-label=\"原始事实\"]'); return p.querySelector('.overflow-y-auto').scrollHeight > p.querySelector('.overflow-y-auto').clientHeight})()")
                 js(f"{prefix}.desktopOriginalFactOpen=false; true")
@@ -252,6 +254,9 @@ def main():
                 assert not window.native.TopMost, "Dismissed close dialog left window topmost"
                 js("document.getElementById('close-behavior').value='tray'; saveCloseBehavior(); true")
                 wait_for("document.getElementById('close-choice').textContent.includes('已记住：最小化到系统托盘')")
+                js(f"{prefix}.layoutMode='dagre_lr'; {prefix}.saveDesktopPreferences(); true")
+                time.sleep(0.5)
+                assert __import__('json').loads((storage / 'data' / 'ui.json').read_text(encoding='utf-8'))['close_behavior'] == 'tray'
                 window.native.BeginInvoke(Action(lambda: window.native.Close()))
                 deadline = time.monotonic() + 5
                 while window.native.Visible and time.monotonic() < deadline:

@@ -57,11 +57,12 @@ def read_finding(project_id: str, fact_id: str, detail: dict) -> dict:
         return {"available": False, "findings": []}
     if report.get("source_hash") != _source_hash(fact, intent):
         return {"available": False, "findings": [], "stale": True}
-    return {"available": True, "findings": report["findings"], "generated_at": report.get("generated_at")}
+    return {"available": True, "findings": report["findings"], "generated_at": report.get("generated_at"),
+            "model": report.get("model")}
 
 
-def _string(value, limit: int = 3000) -> str:
-    return value.strip()[:limit] if isinstance(value, str) else ""
+def _string(value) -> str:
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _normalize(raw: dict) -> list[dict]:
@@ -71,18 +72,20 @@ def _normalize(raw: dict) -> list[dict]:
     if not isinstance(findings, list):
         raise ValueError("模型未返回有效的漏洞列表，请重试。")
     result = []
-    for item in findings[:12]:
+    for item in findings:
         if not isinstance(item, dict):
-            continue
+            raise ValueError("模型返回的漏洞条目格式不正确。")
         evidence = item.get("evidence", [])
         replay = item.get("reproduction", [])
         if not isinstance(evidence, list) or not isinstance(replay, list):
             raise ValueError("模型返回的证据或复现步骤格式不正确。")
+        if any(not isinstance(step, dict) for step in replay):
+            raise ValueError("模型返回的复现步骤格式不正确。")
         result.append({
             **{name: _string(item.get(name)) for name in ("title", "category", "location", "summary", "impact", "limitations")},
-            "evidence": [_string(value) for value in evidence[:20] if _string(value)],
+            "evidence": [_string(value) for value in evidence if _string(value)],
             "reproduction": [{"action": _string(step.get("action")), "expected": _string(step.get("expected"))}
-                             for step in replay[:20] if isinstance(step, dict) and _string(step.get("action"))],
+                             for step in replay if isinstance(step, dict) and _string(step.get("action"))],
         })
     return result
 
@@ -175,11 +178,11 @@ def generate_finding(project_id: str, fact_id: str, detail: dict, key: str, mode
 
     generated_at = datetime.now(timezone.utc).isoformat()
     report = {"fact_id": fact_id, "source_hash": _source_hash(fact, intent),
-              "generated_at": generated_at, "findings": findings}
+              "generated_at": generated_at, "model": model, "findings": findings}
     path.parent.mkdir(parents=True, exist_ok=True)
     staged = path.with_suffix(".json.tmp")
     staged.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     staged.replace(path)
 
     _record_usage(path, fact_id, intent, usages, started, "ok")
-    return {"available": True, "findings": findings, "generated_at": generated_at}
+    return {"available": True, "findings": findings, "generated_at": generated_at, "model": model}

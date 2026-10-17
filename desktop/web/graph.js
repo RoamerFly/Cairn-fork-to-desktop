@@ -56,7 +56,8 @@ window.cairnApp = function () {
       clearTimeout(this._desktopPreferencesTimer);
       this._desktopPreferencesTimer = setTimeout(() => fetch('/desktop/preferences', {method:'PUT',
         headers:{'Content-Type':'application/json','X-Cairn-Token':window.DESKTOP_TOKEN},
-        body:JSON.stringify({...this.localPrefs,sidePanelWidth:this.sidePanelWidth})}).catch(console.warn), 250);
+        body:JSON.stringify({layout_mode:this.localPrefs.layout_mode,actor_name:this.localPrefs.actor_name,
+          sidePanelWidth:this.sidePanelWidth})}).catch(console.warn), 250);
     },
     async api(method, path, body) {
       if (method === 'GET') return api.call(this, method, path, body);
@@ -98,15 +99,32 @@ window.cairnApp = function () {
     openDesktopOriginalFact(fact) {
       const record = fact || this.selectedFactRecord();
       if (!record) return;
+      this._desktopPreviousFocus = document.activeElement;
       this.desktopOriginalFactId = record.id;
       this.desktopOriginalFactText = record.description || '';
       this.desktopOriginalFactOpen = true;
+      setTimeout(() => document.querySelector('#desktop-original-modal button')?.focus(), 50);
     },
     openDesktopFindingModal() {
       if (!this.desktopFinding.available) return;
+      this._desktopPreviousFocus = document.activeElement;
       this.desktopFindingIndex = 0;
       this.desktopFindingSection = 'detail';
       this.desktopFindingModalOpen = true;
+      setTimeout(() => document.querySelector('#desktop-finding-modal button')?.focus(), 50);
+    },
+    closeDesktopModal(kind) {
+      if (kind === 'finding') this.desktopFindingModalOpen = false;
+      else this.desktopOriginalFactOpen = false;
+      this.$nextTick(() => this._desktopPreviousFocus?.focus?.());
+    },
+    trapDesktopModalFocus(event) {
+      const modal = event.currentTarget;
+      const buttons = [...modal.querySelectorAll('button:not([disabled])')].filter(b => b.offsetParent !== null);
+      if (!buttons.length) return;
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     },
     desktopSelectedFinding() {
       return this.desktopFinding.findings?.[this.desktopFindingIndex] || null;

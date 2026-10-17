@@ -27,24 +27,43 @@ class DesktopService:
         self.error = ""
         self.docker = (False, "正在检测")
         self.compose_running = False
+        self.server_owned = False
+        self.foreign_server = False
+        self.cancel_requested = threading.Event()
+        self.command_process = None
+        self.log_revision = 0
         self.key, self.model = load_saved_settings(data_root() / "dispatch.yaml")
         settings = data_root() / "dispatch.yaml"
         saved = yaml.safe_load(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
         self.output_language = (saved or {}).get("runtime", {}).get("output_language", "zh-CN")
+        self.log_path = storage_root() / "logs" / "desktop.log"
+        if self.log_path.is_file():
+            for line in self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]:
+                self.logs.append(line)
         self.log(f"数据目录：{storage_root()}")
 
     def log(self, message):
         if self.key:
             message = message.replace(self.key, "[API KEY]")
         with self.lock:
-            self.logs.append(f"[{datetime.now():%H:%M:%S}] {message.rstrip()}")
+            entry = f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message.rstrip()}"
+            self.logs.append(entry)
+            self.log_revision += 1
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            if self.log_path.is_file() and self.log_path.stat().st_size > 2_000_000:
+                self.log_path.replace(self.log_path.with_suffix(".previous.log"))
+            with self.log_path.open("a", encoding="utf-8") as stream:
+                stream.write(entry + "\n")
 
-    def status(self):
+    def status(self, known_log_revision=None):
         with self.lock:
-            state = {"busy": self.busy, "logs": list(self.logs), "error": self.error}
-        server = server_available()
+            logs = list(self.logs) if known_log_revision != self.log_revision else None
+            state = {"busy": self.busy, "logs": logs, "log_revision": self.log_revision,
+                     "error": self.error}
+        server = self.server_owned and server_available()
         return {**state, "server": server, "docker": self.docker[0],
                 "compose_running": self.compose_running,
+                "foreign_server": self.foreign_server,
                 "docker_text": self.docker[1], "key_configured": bool(self.key),
                 "model": self.model, "output_language": self.output_language,
                 "storage": str(storage_root()), "mode": "docker"}
@@ -63,15 +82,21 @@ class DesktopService:
             folder.mkdir(parents=True, exist_ok=True)
             os.startfile(folder)
             return {"accepted": True}
+        if name == "cancel":
+            self.cancel_operation()
+            return {"accepted": True}
         jobs = {"check": self.check, "save": lambda: self.save(body),
                 "start": lambda: self.start(body), "stop": self.stop,
-                "logs": lambda: self.command(self.compose("logs", "--tail", "100", "--no-color"))}
+                "logs": lambda: self.command(self.compose("logs", "--tail", "100", "--no-color"), timeout=30)}
         if name not in jobs:
             raise ValueError("未知操作")
         with self.lock:
             if self.busy:
                 raise ValueError("正在处理上一项操作")
+            if name == "stop" and not self.compose_running:
+                return {"accepted": False, "reason": "服务未运行"}
             self.busy, self.error = True, ""
+            self.cancel_requested.clear()
 
         def run():
             try:
@@ -84,6 +109,7 @@ class DesktopService:
             finally:
                 with self.lock:
                     self.busy = False
+                    self.cancel_requested.clear()
 
         threading.Thread(target=run, daemon=True).start()
         return {"accepted": True}
@@ -91,14 +117,37 @@ class DesktopService:
     def check(self):
         self.docker = docker_available()
         self.compose_running = False
+        self.server_owned = False
+        self.foreign_server = False
         if self.docker[0]:
             try:
-                result = subprocess.run(self.compose("ps", "--status", "running", "--services"),
+                result = subprocess.run(self.compose("ps", "--status", "running", "-q"),
                     cwd=runtime_root(), capture_output=True, text=True, encoding="utf-8", errors="replace",
                     timeout=15, creationflags=CREATE_NO_WINDOW)
-                self.compose_running = result.returncode == 0 and bool(result.stdout.strip())
+                ids = result.stdout.split() if result.returncode == 0 else []
+                expected = os.path.normcase(os.path.normpath(str(runtime_root().resolve())))
+                for container_id in ids:
+                    identity = subprocess.run(["docker", "inspect", "--format",
+                        "{{json .Config.Labels}}", container_id],
+                        capture_output=True, text=True, timeout=15, creationflags=CREATE_NO_WINDOW)
+                    raw = identity.stdout.decode(errors="replace") if isinstance(identity.stdout, bytes) else identity.stdout
+                    try:
+                        labels = json.loads(raw) if identity.returncode == 0 else {}
+                    except ValueError:
+                        labels = {}
+                    if not isinstance(labels, dict):
+                        labels = {}
+                    actual = os.path.normcase(os.path.normpath(str(labels.get("com.docker.compose.project.working_dir", ""))))
+                    if actual == expected:
+                        self.compose_running = True
+                        if labels.get("com.docker.compose.service") == "cairn-server":
+                            self.server_owned = True
+                    else:
+                        self.foreign_server = True
             except (OSError, subprocess.TimeoutExpired):
                 self.log("无法确认 Compose 服务状态，将由启动流程重新检查。")
+        if server_available() and not self.server_owned:
+            self.foreign_server = True
 
     @staticmethod
     def docker_desktop_path():
@@ -121,6 +170,8 @@ class DesktopService:
         deadline = time.monotonic() + 240
         next_log = time.monotonic() + 15
         while time.monotonic() < deadline:
+            if self.cancel_requested.is_set():
+                raise RuntimeError("用户已取消启动操作。")
             self.docker = docker_available()
             if self.docker[0]:
                 self.log("Docker Desktop 已就绪。")
@@ -152,21 +203,66 @@ class DesktopService:
     def compose(*args):
         return ["docker", "compose", "-f", "compose.yaml", *args]
 
-    def command(self, args):
+    def command(self, args, timeout=600):
+        if self.cancel_requested.is_set():
+            raise RuntimeError("用户已取消当前操作。")
         self.log("$ " + " ".join(args))
         process = subprocess.Popen(args, cwd=runtime_root(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, encoding="utf-8", errors="replace", creationflags=CREATE_NO_WINDOW)
-        try:
+        self.command_process = process
+        if self.cancel_requested.is_set():
+            self._kill_command(process)
+        def read_output():
             for line in process.stdout:
                 self.log(line)
-            if process.wait() != 0:
+        reader = threading.Thread(target=read_output, daemon=True)
+        reader.start()
+        try:
+            try:
+                code = process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                self._kill_command(process)
+                raise RuntimeError(f"命令超过 {timeout} 秒未完成，已停止；请检查运行日志。")
+            if self.cancel_requested.is_set():
+                raise RuntimeError("用户已取消当前操作。")
+            if code != 0:
                 raise RuntimeError("命令执行失败，请查看运行日志。")
         finally:
+            reader.join(timeout=3)
+            self.command_process = None
             process.stdout.close()
 
+    @staticmethod
+    def _kill_command(process):
+        if process.poll() is not None:
+            return
+        if os.name == "nt":
+            try:
+                result = subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                                        capture_output=True, timeout=10, creationflags=CREATE_NO_WINDOW)
+            except (OSError, subprocess.TimeoutExpired):
+                result = None
+            if (result is None or result.returncode != 0) and process.poll() is None:
+                process.kill()
+        else:
+            process.kill()
+
+    def cancel_operation(self):
+        with self.lock:
+            if not self.busy or self.cancel_requested.is_set():
+                return
+            self.cancel_requested.set()
+        process = self.command_process
+        if process:
+            self._kill_command(process)
+        self.log("已请求取消当前操作。")
+
     def start(self, body):
-        if server_available():
+        self.check()
+        if self.server_owned and server_available():
             raise RuntimeError("Cairn 服务已运行。请使用“停止服务”后再重新启动。")
+        if self.foreign_server:
+            raise RuntimeError("8000 端口已有其他 Cairn 服务或旧位置的服务。请先关闭原服务。")
         if not (body.get("api_key", "").strip() or self.key):
             raise RuntimeError("请先在设置中填写 DeepSeek API Key。")
         self.save(body)
@@ -182,9 +278,13 @@ class DesktopService:
         else:
             self.log("复用本机已安装的 Worker 镜像。")
         self.command(self.compose("up", "-d", "--build", "--force-recreate"))
-        self.compose_running = True
+        self.check()
+        if not self.server_owned or self.foreign_server:
+            raise RuntimeError("Compose 启动后未能确认此目录的 Cairn 服务，请查看运行日志。")
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
+            if self.cancel_requested.is_set():
+                raise RuntimeError("用户已取消启动操作。")
             if server_available():
                 self.log("Cairn 服务已启动并通过 API 检查。")
                 return
@@ -193,14 +293,12 @@ class DesktopService:
 
     def stop(self):
         self.check()
-        if not self.docker[0]:
-            if not server_available():
-                self.log("Docker 引擎未运行，无需停止服务。")
-                return
-            raise RuntimeError("Docker 引擎不可用，无法确认 Cairn 服务是否已停止。")
-        if not self.compose_running and not server_available():
-            self.log("Cairn 服务已经停止。")
+        if not self.compose_running:
             return
+        if self.foreign_server:
+            raise RuntimeError("检测到其他目录的服务；为保护该服务，请在原位置停止。")
+        if not self.docker[0]:
+            raise RuntimeError("Docker 引擎不可用，无法确认 Cairn 服务是否已停止。")
         if server_available():
             with urllib.request.urlopen(f"{SERVER_URL}/projects", timeout=10) as response:
                 projects = json.load(response)
@@ -213,6 +311,11 @@ class DesktopService:
             if active:
                 self.log(f"已停止 {len(active)} 个任务，等待 Worker 清理。")
                 time.sleep(5)
-        self.command(self.compose("stop"))
-        self.compose_running = False
+        self.command(self.compose("stop"), timeout=90)
+        deadline = time.monotonic() + 20
+        while server_available() and time.monotonic() < deadline:
+            time.sleep(1)
+        self.check()
+        if self.compose_running or self.server_owned:
+            raise RuntimeError("Compose 停止后仍检测到本目录服务，请查看运行日志。")
         self.log("服务已停止，历史图与任务文件保留。")

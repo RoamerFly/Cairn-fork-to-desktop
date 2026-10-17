@@ -15,6 +15,8 @@
           class="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-left text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
           x-text="`查看结果（${desktopFinding.findings.length} 条） ↗`"></button>
         <p class="text-xs text-slate-500">按需使用已保存的模型配置整理当前事实；保留原始记录，模型整理会消耗 Token。</p>
+        <p x-show="desktopFinding.stale" class="text-xs text-amber-700">原始事实已变化，旧整理结果已过期。请点击“整理结果”重新生成。</p>
+        <p x-show="desktopFinding.available && desktopFinding.generated_at" class="text-xs text-slate-500" x-text="`整理时间：${desktopFinding.generated_at || ''} · 模型：${desktopFinding.model || '旧版记录未记载'}`"></p>
         <p x-show="desktopFindingError" class="text-xs text-rose-600 break-words" x-text="desktopFindingError"></p>
         <p x-show="!desktopFinding.available && !desktopFindingBusy && !desktopFindingError" class="text-xs text-slate-500">尚未整理。点击“整理结果”查看结构化发现。</p>
       </section>
