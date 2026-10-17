@@ -84,7 +84,8 @@ class DesktopServiceTests(unittest.TestCase):
     def test_open_project_uses_sidecar_and_rejects_traversal(self):
         with patch("web_service.os.startfile", create=True) as opened:
             self.service.action("open_project", {"project_id": "proj_001"})
-            self.assertEqual(opened.call_args.args[0], Path(self.temporary.name) / "output" / "proj_001")
+            self.assertTrue(Path(opened.call_args.args[0]).samefile(
+                Path(self.temporary.name) / "output" / "proj_001"))
             with self.assertRaises(ValueError):
                 self.service.action("open_project", {"project_id": "../../outside"})
 

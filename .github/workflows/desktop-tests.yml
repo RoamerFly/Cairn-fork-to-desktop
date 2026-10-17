@@ -1,8 +1,6 @@
 name: Desktop and local runtime tests
 
 on:
-  push:
-    branches: ["codex/**"]
   pull_request:
 
 jobs:
