@@ -1,0 +1,25 @@
+name: Desktop and local runtime tests
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install test dependencies
+        run: python -m pip install -e ./cairn pytest httpx
+      - name: Build desktop runtime test fixture
+        run: python -c "import sys; sys.path.insert(0, 'desktop'); import build; build.build_payload()"
+      - name: Run Cairn core tests
+        run: python -m pytest cairn/tests -q
+      - name: Run desktop tests
+        run: python -m pytest desktop -q

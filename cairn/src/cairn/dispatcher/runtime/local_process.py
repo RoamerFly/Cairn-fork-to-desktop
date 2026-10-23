@@ -21,8 +21,8 @@ class LocalProcess:
 
     Mirrors the container ManagedProcess surface (start/communicate/kill/cancel) but
     executes on the dispatcher host: its own process group so children are killed as a
-    group, a Python-enforced timeout instead of the ``timeout`` coreutil, and a
-    SIGTERM -> grace -> SIGKILL shutdown so the CLI can flush its session before dying.
+    group, a Python-enforced timeout instead of the ``timeout`` coreutil. On POSIX
+    it uses SIGTERM then SIGKILL; on Windows taskkill /T stops the whole tree.
     """
 
     def __init__(
@@ -57,7 +57,8 @@ class LocalProcess:
             text=True,
             encoding="utf-8",
             errors="replace",
-            start_new_session=True,
+            start_new_session=os.name != "nt",
+            creationflags=(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0),
         )
         self._stdout_thread = threading.Thread(
             target=self._drain, args=(self._process.stdout, self._stdout_chunks), daemon=True
@@ -106,6 +107,16 @@ class LocalProcess:
         with self._kill_lock:
             process = self._process
             if process is None or process.poll() is not None:
+                return
+            if os.name == "nt":
+                try:
+                    result = subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                                            capture_output=True, timeout=10,
+                                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                except (OSError, subprocess.TimeoutExpired):
+                    result = None
+                if (result is None or result.returncode != 0) and process.poll() is None:
+                    process.kill()
                 return
             self._signal_group(process, signal.SIGTERM)
             try:

@@ -87,7 +87,7 @@ def run_explore_task(
                 return "unhealthy"
 
         prompt = render_prompt(
-            load_prompt(config.runtime.prompt_group, "explore.md"),
+            load_prompt(config.runtime.prompt_group, "explore.md", config.runtime.output_language),
             {
                 "graph_yaml": write_graph_snapshot_reference(
                     container_manager,
@@ -110,6 +110,7 @@ def run_explore_task(
             worker,
             execute.argv,
             phase="explore_execute",
+            intent_id=intent.id,
             timeout=config.tasks.explore.timeout,
             lease=lease,
             cancellation=cancellation,
@@ -290,7 +291,7 @@ def _try_conclude_fallback(
     container_name = container_manager.ensure_running(project_id)
 
     prompt = render_prompt(
-        load_prompt(config.runtime.prompt_group, "explore_conclude.md"),
+        load_prompt(config.runtime.prompt_group, "explore_conclude.md", config.runtime.output_language),
         {
             "graph_yaml": write_graph_snapshot_reference(
                 container_manager,
@@ -311,6 +312,7 @@ def _try_conclude_fallback(
         worker,
         conclude_argv,
         phase="explore_conclude",
+        intent_id=intent.id,
         timeout=config.tasks.explore.conclude_timeout,
         lease=lease,
         cancellation=cancellation,
@@ -391,6 +393,7 @@ def _run_process(
     argv: list[str],
     *,
     phase: str,
+    intent_id: str,
     timeout: int,
     lease: HeartbeatLease,
     cancellation: TaskCancellation,
@@ -401,6 +404,7 @@ def _run_process(
         worker,
         argv,
         phase=phase,
+        intent_id=intent_id,
         timeout_seconds=timeout,
         lease=lease,
         cancellation=cancellation,

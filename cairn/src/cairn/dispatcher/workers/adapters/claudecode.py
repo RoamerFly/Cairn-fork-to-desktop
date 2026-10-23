@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from cairn.dispatcher.config import WorkerConfig
 from cairn.dispatcher.workers.base import DriverResult, SeedSessionDriver
 from cairn.dispatcher.workers.health import HealthResult, http_ping, proxies_from_env
@@ -43,6 +45,8 @@ class ClaudeCodeDriver(SeedSessionDriver):
                 "--session-id",
                 session,
                 "--dangerously-skip-permissions",
+                "--output-format",
+                "json",
                 "-p",
                 "--",
                 prompt,
@@ -56,7 +60,17 @@ class ClaudeCodeDriver(SeedSessionDriver):
             "-r",
             session,
             "--dangerously-skip-permissions",
+            "--output-format",
+            "json",
             "-p",
             "--",
             prompt,
         ]
+
+    def extract_response_text(self, stdout: str, stderr: str) -> str:
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError:
+            return stdout
+        result = payload.get("result") if isinstance(payload, dict) else None
+        return result if isinstance(result, str) else stdout

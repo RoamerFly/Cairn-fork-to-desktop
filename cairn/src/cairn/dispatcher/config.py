@@ -155,6 +155,7 @@ class ContainerConfig(BaseModel):
     network_mode: str
     completed_action: CompletedAction
     cap_add: list[str] = Field(default_factory=list)
+    persistence_root: str | None = None
 
 
 class LocalConfig(BaseModel):
@@ -171,6 +172,7 @@ class RuntimeConfig(BaseModel):
     worker_healthcheck: WorkerHealthcheckMode = "startup_only"
     execution: ExecutionMode = "container"
     prompt_group: str = Field(min_length=1)
+    output_language: Literal["auto", "zh-CN", "en"] = "auto"
 
 
 class WorkerConfig(BaseModel):

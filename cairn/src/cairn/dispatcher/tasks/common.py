@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import json
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from cairn.dispatcher.config import DispatchConfig, WorkerConfig
 from cairn.dispatcher.protocol.client import CairnClient
@@ -60,7 +62,9 @@ def write_graph_snapshot_reference(
     *,
     phase: str,
 ) -> str:
-    path = f"{GRAPH_SNAPSHOT_ROOT}/{phase}-{uuid.uuid4().hex[:12]}/graph.yaml"
+    root = getattr(container_manager, "artifact_root", lambda: None)()
+    snapshot_root = f"{root}/prompts" if root else GRAPH_SNAPSHOT_ROOT
+    path = f"{snapshot_root}/{phase}-{uuid.uuid4().hex[:12]}/graph.yaml"
     container_manager.write_text_file(container_name, path, graph_yaml)
     return (
         "The graph YAML snapshot is stored in this file inside the current container:\n\n"
@@ -80,6 +84,7 @@ def run_worker_process(
     timeout_seconds: int,
     lease: HeartbeatLease | None = None,
     cancellation: TaskCancellation | None = None,
+    intent_id: str | None = None,
 ) -> ProcessResult:
     LOG.info(
         "starting container exec container=%s worker=%s phase=%s timeout=%ss",
@@ -94,18 +99,158 @@ def run_worker_process(
         argv,
         timeout_seconds=timeout_seconds,
     )
+    started_at = datetime.now(timezone.utc).isoformat()
+    started = time.monotonic()
     process.start()
     if lease is not None:
         lease.attach_process(process)
     if cancellation is not None:
         cancellation.attach_process(process)
     try:
-        return process.communicate(timeout=communicate_timeout(timeout_seconds))
+        result = process.communicate(timeout=communicate_timeout(timeout_seconds))
+        archive_worker_result(
+            container_manager, container_name, worker, argv, phase, result,
+            intent_id=intent_id, started_at=started_at,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+        return result
     finally:
         if lease is not None:
             lease.attach_process(None)
         if cancellation is not None:
             cancellation.attach_process(None)
+
+
+def archive_worker_result(
+    container_manager: ContainerManager,
+    container_name: str,
+    worker: WorkerConfig,
+    argv: list[str],
+    phase: str,
+    result: ProcessResult,
+    *,
+    intent_id: str | None = None,
+    started_at: str | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    root = getattr(container_manager, "artifact_root", lambda: None)()
+    if not root:
+        return
+    directory = f"{root}/runs/{phase}-{uuid.uuid4().hex[:12]}"
+    secrets = [value for key, value in worker.env.items() if any(token in key.upper() for token in ("KEY", "TOKEN", "PASSWORD")) and value]
+
+    def redact(text: str) -> str:
+        for secret in secrets:
+            text = text.replace(secret, "[REDACTED]")
+        return text
+
+    metadata = {
+        "worker": worker.name,
+        "phase": phase,
+        "argv": argv,
+        "returncode": result.returncode,
+        "timed_out": result.timed_out,
+        "cancelled": result.cancelled,
+        "cancel_reason": result.cancel_reason,
+        "intent_id": intent_id,
+        "started_at": started_at,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "duration_ms": duration_ms,
+        "token_usage": extract_token_usage(result.stdout, result.stderr),
+    }
+    try:
+        for name, content in (
+            ("task.json", json.dumps(metadata, ensure_ascii=False, indent=2)),
+            ("stdout.log", result.stdout),
+            ("stderr.log", result.stderr),
+        ):
+            container_manager.write_text_file(container_name, f"{directory}/{name}", redact(content))
+    except Exception as exc:
+        LOG.warning("could not archive worker process container=%s phase=%s error=%s", container_name, phase, exc)
+
+
+def extract_token_usage(stdout: str, stderr: str = "") -> dict[str, int] | None:
+    """Extract provider-reported token counts from supported CLI JSON output."""
+
+    def normalized(value: object) -> dict[str, int] | None:
+        if not isinstance(value, dict):
+            return None
+        details = value.get("input_tokens_details") or value.get("prompt_tokens_details") or {}
+        input_tokens = value.get("input_tokens", value.get("prompt_tokens", value.get("input", value.get("inputTokens"))))
+        output_tokens = value.get("output_tokens", value.get("completion_tokens", value.get("output", value.get("outputTokens"))))
+        cached = value.get("cached_input_tokens", value.get("cache_read_input_tokens",
+                          value.get("cacheRead", value.get("cacheReadInputTokens"))))
+        if cached is None and isinstance(details, dict):
+            cached = details.get("cached_tokens")
+        values = (input_tokens, output_tokens, cached)
+        if not any(isinstance(item, (int, float)) and item >= 0 for item in values):
+            return None
+        usage = {}
+        if isinstance(input_tokens, (int, float)) and input_tokens >= 0:
+            usage["input_tokens"] = int(input_tokens)
+        if isinstance(output_tokens, (int, float)) and output_tokens >= 0:
+            usage["output_tokens"] = int(output_tokens)
+        if isinstance(cached, (int, float)) and cached >= 0:
+            usage["cached_input_tokens"] = int(cached)
+        total = value.get("total_tokens", value.get("totalTokens"))
+        if isinstance(total, (int, float)) and total >= 0:
+            usage["total_tokens"] = int(total)
+        elif "input_tokens" in usage and "output_tokens" in usage:
+            usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+        return usage
+
+    def sum_usages(usages):
+        if not usages:
+            return None
+        keys = {key for usage in usages for key in usage}
+        return {key: sum(usage.get(key, 0) for usage in usages) for key in keys}
+
+    text = stdout.strip()
+    candidates = []
+    if text:
+        try:
+            root = json.loads(text)
+        except json.JSONDecodeError:
+            root = None
+        if isinstance(root, dict):
+            usage = normalized(root.get("usage"))
+            if usage:
+                return usage
+            model_usage = root.get("modelUsage")
+            if isinstance(model_usage, dict):
+                return sum_usages([u for item in model_usage.values() if (u := normalized(item))])
+        for line in text.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else event
+            event_type = payload.get("type") or event.get("type")
+            info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+            usage = (normalized(payload.get("usage")) or normalized(payload.get("last_token_usage"))
+                     or normalized(info.get("last_token_usage")))
+            if usage and event_type in {"turn.completed", "agent_end", "turn_end", "token_count"}:
+                candidates.append((event_type, usage))
+                continue
+            messages = payload.get("messages")
+            if event_type == "agent_end" and isinstance(messages, list):
+                candidates.append((event_type, sum_usages([
+                    u for message in messages if isinstance(message, dict)
+                    and message.get("role") == "assistant"
+                    and (u := normalized(message.get("usage")))
+                ])))
+        codex_turns = [usage for kind, usage in candidates if kind == "turn.completed"]
+        if codex_turns:
+            return sum_usages(codex_turns)
+        pi_turns = [usage for kind, usage in candidates if kind == "agent_end" and usage]
+        if pi_turns:
+            return sum_usages(pi_turns)
+        other = [usage for _kind, usage in candidates if usage]
+        if other:
+            return other[-1]
+    return None
 
 
 def project_allows_conclude_fallback(client: CairnClient, project_id: str, *, worker_name: str, intent_id: str) -> bool:

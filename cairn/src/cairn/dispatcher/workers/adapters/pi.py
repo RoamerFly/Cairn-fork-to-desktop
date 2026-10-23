@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import PurePosixPath
+import os
+import shutil
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from cairn.dispatcher.config import WorkerConfig
@@ -94,9 +96,11 @@ class PiDriver(WorkerDriver):
         return self._wrap_with_models(worker, argv)
 
     def _local_argv(self, worker: WorkerConfig, prompt: str, session: str | None) -> list[str]:
-        # Native pi: no models.json injection and no --provider/--model overrides, so pi uses
-        # its own host configuration. A tiny sh wrapper just ensures the session dir exists.
-        session_dir = self._session_dir(worker)
+        # Native pi uses its own host configuration and a host-native session path.
+        session_root = Path(os.environ.get("CAIRN_LOCAL_SESSION_ROOT", Path.home() / ".cairn" / "pi"))
+        session_path = session_root.expanduser() / worker.name / "sessions"
+        session_path.mkdir(parents=True, exist_ok=True)
+        session_dir = str(session_path)
         pi_argv = [
             "--mode",
             "json",
@@ -113,8 +117,7 @@ class PiDriver(WorkerDriver):
         if session:
             pi_argv.extend(["--session", session])
         pi_argv.extend(["-p", prompt])
-        script = 'sdir="$1"\nshift\nmkdir -p "$sdir"\nexec pi "$@"\n'
-        return ["/bin/sh", "-lc", script, "--", session_dir, *pi_argv]
+        return [shutil.which("pi") or "pi", *pi_argv]
 
     def extract_session(self, session: str | None, stdout: str, stderr: str) -> str | None:
         if session:

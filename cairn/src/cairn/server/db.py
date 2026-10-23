@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Generator
 DEFAULT_DB = Path.home() / ".local" / "share" / "cairn" / "cairn.db"
 
 _db_path: Path | None = None
+_journal_mode = "WAL"
 
 SCHEMA = """\
 CREATE TABLE IF NOT EXISTS settings (
@@ -83,12 +85,22 @@ CREATE TABLE IF NOT EXISTS scoped_counters (
 
 
 def configure(path: Path) -> None:
-    global _db_path
+    global _db_path, _journal_mode
     if _db_path is not None:
         return
+    requested_mode = os.environ.get("CAIRN_SQLITE_JOURNAL_MODE", "WAL").upper()
+    if requested_mode not in {"WAL", "DELETE"}:
+        raise ValueError("CAIRN_SQLITE_JOURNAL_MODE must be WAL or DELETE")
+    _journal_mode = requested_mode
     _db_path = path
     _db_path.parent.mkdir(parents=True, exist_ok=True)
     with get_conn() as conn:
+        # Set journal mode once during startup. Re-running this PRAGMA on every
+        # connection can fail during concurrent requests, and WAL is unreliable
+        # on some host-shared filesystems (including Docker Desktop bind mounts).
+        mode = conn.execute(f"PRAGMA journal_mode={_journal_mode}").fetchone()[0].upper()
+        if mode != _journal_mode:
+            raise RuntimeError(f"Could not set SQLite journal mode to {_journal_mode}: {mode}")
         conn.executescript(SCHEMA)
         _ensure_project_columns(conn)
 
@@ -106,9 +118,9 @@ def _ensure_project_columns(conn: sqlite3.Connection) -> None:
 @contextmanager
 def get_conn() -> Generator[sqlite3.Connection, None, None]:
     assert _db_path is not None
-    conn = sqlite3.connect(str(_db_path))
+    conn = sqlite3.connect(str(_db_path), timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn

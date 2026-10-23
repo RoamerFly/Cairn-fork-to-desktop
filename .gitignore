@@ -4,3 +4,11 @@ __pycache__/
 .playwright-cli/
 datas/
 dispatch.yaml
+desktop/build/
+dist/
+desktop/dist_windows/
+desktop/design/cairn-desktop-implemented.png
+desktop/design/cairn-settings-implemented.png
+desktop/design/cairn-close-implemented.png
+desktop/design/cairn-original-fact-implemented.png
+desktop/design/cairn-finding-implemented.png
