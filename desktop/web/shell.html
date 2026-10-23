@@ -17,7 +17,7 @@
 .shutdown-progress{margin:0;color:#475569;line-height:1.8}.shutdown-error{margin:14px 0;padding:12px;border-radius:10px;background:#fff1f2;color:#be123c;white-space:pre-wrap;word-break:break-word}.shutdown-danger{color:#be123c;border-color:#fecdd3}.shutdown-danger:hover{background:#fff1f2}
 </style></head><body>
 <nav class="top">
- <span class="brand"><img src="/desktop-icons/cairn.png" alt="Cairn 图标">CAIRN<span class="version">0.8.0</span></span>
+ <span class="brand"><img src="/desktop-icons/cairn.png" alt="Cairn 图标">CAIRN<span class="version">0.9.0</span></span>
  <button class="tab active" id="control-tab" onclick="show('control')">控制中心</button>
  <button class="tab" id="graph-tab" onclick="show('graph')">任务过程图</button>
  <button class="tab" id="settings-tab" onclick="show('settings')">设置</button>
@@ -32,7 +32,7 @@
   <div class="status-line"><span>模型</span><span id="current-model">正在读取</span></div>
   <div class="status-line"><span>任务输出</span><span id="current-language">简体中文</span></div>
   <div class="actions"><button data-job="start" class="primary" onclick="action('start')">构建并启动</button><button onclick="show('settings')">配置模型与语言</button></div>
-  <p class="help">点击后会自动打开已安装的 Docker Desktop、等待 Linux 引擎，并准备 Worker 镜像与 Cairn 服务。任务创建与管理位于任务过程图页。</p>
+  <p class="help">点击后会自动打开已安装的 Docker Desktop、等待 Linux 引擎，并准备 Worker 镜像与 Cairn 服务。任务创建与管理位于任务过程图页。镜像下载缓慢时可在设置页配置 Docker 代理。</p>
  </section>
  <section class="card" style="margin-top:20px"><h2>环境与数据</h2>
   <div class="status-line"><span>Docker 引擎</span><span id="docker">正在检测</span></div>
@@ -65,6 +65,13 @@
    <div class="actions"><button id="save-ui" onclick="savePreferences()">保存界面偏好</button></div>
    <p class="help">保存后立即应用。图页中调整布局或拖动面板也会保存，重新打开 EXE 后继续使用。</p>
   </section>
+  <section class="card wide" id="proxy-settings"><h2>网络代理 · Docker 镜像下载</h2>
+   <p class="help">首次启动会从镜像仓库下载 Worker 和应用基础镜像。这部分由 Docker Desktop 管理，请在 Docker Desktop 中设置代理：</p>
+   <p class="path">Settings → Resources → Proxies → Containers proxy</p>
+   <p class="help">选择“Same as host proxy”复用主机代理；或选择“Manual configuration”，填写 HTTP / HTTPS 代理地址，例如 <code>http://127.0.0.1:7890</code>，然后应用设置。若 Docker Desktop proxy 也设为手动，请为它填写同样的地址。完成后回到控制中心重试“构建并启动”。</p>
+   <div class="actions"><button onclick="openDockerDesktop()">打开 Docker Desktop</button></div>
+   <p class="help">DeepSeek API Key 只用于模型请求，无法改变 Docker 镜像下载线路。容器内访问模型 API 的代理是另一项配置，不能用此处的 Docker 镜像代理替代。</p>
+  </section>
   <section class="card wide"><h2>执行环境与本机存储</h2>
    <div class="status-line"><span>执行模式</span><span>Docker · 独立项目容器</span></div>
    <p class="help">本机执行模式尚未接入桌面版。服务、Worker 镜像由 Docker 管理，模型通过 DeepSeek API 调用。</p>
@@ -73,10 +80,10 @@
    <p class="help">data 存放数据库与设置；output 存放每个项目的报告、证据和执行记录。便携使用时将 EXE 与 CairnDesktopData 一起复制。</p>
   </section>
   <section class="card wide"><h2>关闭行为</h2><label class="field" for="close-behavior">关闭主窗口时</label><select id="close-behavior"><option value="ask">每次询问</option><option value="exit">退出并停止服务</option><option value="tray">最小化到系统托盘</option></select><div class="actions"><button id="save-close" onclick="saveCloseBehavior()">保存关闭行为</button></div><p id="close-choice" class="help">关闭时可以选择退出并停止服务，或隐藏到系统托盘让服务继续运行。</p><p class="help">首次关闭时会询问一次。选择“记住此选项”后，此页会显示并可随时更改。</p></section>
- </div><p class="settings-foot">Cairn 桌面控制中心 0.8.0 · 开发者 RoamerFly</p>
+ </div><p class="settings-foot">Cairn 桌面控制中心 0.9.0 · 开发者 RoamerFly</p>
 </div></main>
 <div id="about" class="about hidden" onclick="if(event.target===this)this.classList.add('hidden')"><section class="card">
- <img src="/desktop-icons/cairn.png" alt="Cairn 图标"><h2>Cairn 桌面控制中心 0.8.0</h2>
+ <img src="/desktop-icons/cairn.png" alt="Cairn 图标"><h2>Cairn 桌面控制中心 0.9.0</h2>
  <p>开发者：RoamerFly<br>Cairn 核心：0.2.1<br>界面：原项目 UI · WebView2<br>执行：Codex Worker · DeepSeek API · Docker</p>
  <p><a target="_blank" rel="noreferrer" href="https://github.com/RoamerFly">开发者主页</a> · <a target="_blank" rel="noreferrer" href="https://github.com/RoamerFly/Cairn-fork-to-desktop">项目仓库</a> · <a target="_blank" rel="noreferrer" href="https://github.com/RoamerFly/Cairn-fork-to-desktop/issues">问题反馈</a></p>
  <button onclick="document.getElementById('about').classList.add('hidden')">关闭</button>
@@ -100,6 +107,7 @@ const $=id=>document.getElementById(id);
 function notify(message,error=false){$('notice').textContent=message;$('notice').classList.remove('hidden');$('notice').classList.toggle('error',error);clearTimeout(noticeTimer);if(!error)noticeTimer=setTimeout(()=>$('notice').classList.add('hidden'),5000);}
 function show(page){for(const name of ['control','graph','settings']){$(name).classList.toggle('hidden',page!==name);$(name+'-tab').classList.toggle('active',page===name);}if(page==='graph')$('graph').contentWindow.dispatchEvent(new Event('resize'));if(page==='settings')loadPreferences();}
 async function request(path,method='GET',body){const r=await fetch(path,{method,headers:{'Content-Type':'application/json','X-Cairn-Token':token},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(data.detail||'操作失败');return data;}
+async function openDockerDesktop(){try{await request('/desktop/action','POST',{action:'open_docker_desktop'});notify('已打开 Docker Desktop，请进入 Settings → Resources → Proxies 配置代理。');}catch(e){notify(e.message,true);}}
 async function status(){try{const s=await request('/desktop/status?log_revision='+lastLogRevision);$('state').textContent=s.busy?'正在处理…':s.foreign_server?'检测到其他位置的服务':s.server?'服务运行中':s.compose_running?'服务仍在运行':s.docker?'服务已停止':'离线历史可查看';$('state').classList.toggle('running',s.server);$('docker').textContent=s.docker_text;$('server').textContent=s.foreign_server?'其他位置占用端口':s.server?'运行中':'未运行';$('storage').textContent=s.storage;$('settings-storage').textContent=s.storage;$('key-state').textContent=s.key_configured?'已保存密钥；留空时复用本机配置。':'密钥只保存在本机数据目录。';$('current-model').textContent=s.model;$('current-language').textContent={'zh-CN':'简体中文',en:'English',auto:'跟随原提示词'}[s.output_language]||'跟随原提示词';document.querySelectorAll('[data-job]').forEach(b=>b.disabled=s.busy||jobPending||(b.dataset.job==='start'&&(s.server||s.foreign_server))||(b.dataset.job==='stop'&&!s.compose_running));$('cancel-job').classList.toggle('hidden',!s.busy);const log=$('logs');if(s.log_revision!==lastLogRevision){const nearEnd=log.scrollHeight-log.scrollTop-log.clientHeight<40;log.textContent=s.logs.join('\n');lastLogRevision=s.log_revision;if(nearEnd)log.scrollTop=log.scrollHeight;}if(s.error&&s.error!==previousError)notify(s.error,true);if(!s.error&&previousError&&$('notice').classList.contains('error'))$('notice').classList.add('hidden');previousError=s.error;if(!initialized){$('model').value=s.model;$('output-language').value=s.output_language;initialized=true;}return s;}catch(e){$('state').textContent='状态连接中断';$('state').classList.remove('running');document.querySelectorAll('[data-job]').forEach(b=>b.disabled=true);notify(String(e),true);return null;}}
 async function cancelJob(){try{await request('/desktop/action','POST',{action:'cancel'});notify('已请求取消当前操作。');}catch(e){notify(e.message,true);}}
 async function action(name){if(jobPending)return;jobPending=true;document.querySelectorAll('[data-job]').forEach(b=>b.disabled=true);try{await status();const body={action:name};if(name==='save'||name==='start')Object.assign(body,{api_key:$('key').value,model:$('model').value,output_language:$('output-language').value});const result=await request('/desktop/action','POST',body);if(!result.accepted){notify(result.reason||'无需操作');return;}if(name==='save'||name==='start')$('key').value='';if(name==='save')notify('正在保存模型与语言，完成情况请查看运行日志。保存后重新启动服务生效。');else if(name==='start')notify('正在构建并启动，请查看运行日志。');else if(name==='stop')notify('正在停止服务，请稍候。');else if(name==='check')notify('正在检查运行环境，请稍候。');else if(name==='logs')notify('正在读取服务日志，请稍候。');let s,failedReads=0;do{await new Promise(resolve=>setTimeout(resolve,500));s=await status();if(!s&&++failedReads>=6)throw new Error('连续无法读取运行状态；请检查桌面程序。');if(s)failedReads=0;}while(!s||s.busy);}catch(e){notify(e.message,true);}finally{jobPending=false;await status();}}

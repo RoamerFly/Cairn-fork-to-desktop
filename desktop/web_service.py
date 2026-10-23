@@ -69,6 +69,12 @@ class DesktopService:
                 "storage": str(storage_root()), "mode": "docker"}
 
     def action(self, name, body):
+        if name == "open_docker_desktop":
+            desktop = self.docker_desktop_path()
+            if desktop is None:
+                raise RuntimeError("未找到 Docker Desktop。请先安装，再打开其 Settings → Resources → Proxies。")
+            os.startfile(desktop)
+            return {"accepted": True}
         if name in {"open_output", "open_storage", "open_project", "open_run"}:
             folder = storage_root() if name == "open_storage" else output_root()
             if name in {"open_project", "open_run"}:
@@ -277,7 +283,8 @@ class DesktopService:
             self.command(["docker", "pull", "--platform=linux/amd64", WORKER_IMAGE])
         else:
             self.log("复用本机已安装的 Worker 镜像。")
-        self.command(self.compose("up", "-d", "--build", "--force-recreate"))
+        self.log("正在构建 Cairn 应用镜像。首次构建需从 GHCR 下载基础镜像；若下载缓慢，请在 Docker Desktop 的 Settings → Resources → Proxies 配置 Containers proxy 后重试。")
+        self.command(self.compose("up", "-d", "--build", "--force-recreate"), timeout=1800)
         self.check()
         if not self.server_owned or self.foreign_server:
             raise RuntimeError("Compose 启动后未能确认此目录的 Cairn 服务，请查看运行日志。")

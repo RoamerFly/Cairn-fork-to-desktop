@@ -98,6 +98,14 @@ class DesktopServiceTests(unittest.TestCase):
         launched.assert_called_once_with(executable)
         self.assertTrue(self.service.docker[0])
 
+    def test_proxy_settings_opens_docker_desktop_without_starting_a_job(self):
+        executable = Path(self.temporary.name) / "Docker Desktop.exe"
+        with patch.object(self.service, "docker_desktop_path", return_value=executable), \
+             patch("web_service.os.startfile", create=True) as launched:
+            self.assertEqual(self.service.action("open_docker_desktop", {}), {"accepted": True})
+        launched.assert_called_once_with(executable)
+        self.assertFalse(self.service.busy)
+
     def test_stop_with_no_engine_and_no_service_is_idempotent(self):
         with patch("web_service.docker_available", return_value=(False, "未启动")), \
              patch("web_service.server_available", return_value=False), \
